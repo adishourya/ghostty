@@ -107,6 +107,8 @@ sessions: std.ArrayList(sessionpkg.Session) = .empty,
 controller: ?*Client = null,
 /// The last layout ghostty reported, as JSON.
 last_report: ?[]u8 = null,
+/// Hash of the surfaces last sent to the controller; see `Tag.surfaces`.
+sent_surfaces: ?u64 = null,
 /// Path of this executable, for commands ghostty runs in new windows.
 exe_buf: [std.fs.max_path_bytes]u8 = undefined,
 exe_len: usize = 0,
@@ -238,6 +240,7 @@ fn tick(self: *Server) !void {
 
     self.reap();
     self.sweep();
+    sessionpkg.sendSurfaces(self);
     if (nowMs() - self.last_save_ms >= save_interval_ms) self.save(false);
 }
 
@@ -377,6 +380,22 @@ fn depart(self: *Server, pane: *Pane) void {
         return;
     };
     pane.fg = null;
+}
+
+/// Forget the departed panes of a session, so they aren't resurrected.
+pub fn forgetDeparted(self: *Server, session: []const u8) void {
+    var i: usize = 0;
+    while (i < self.departed.items.len) {
+        const d = self.departed.items[i];
+        if (!std.mem.eql(u8, d.session, session)) {
+            i += 1;
+            continue;
+        }
+        persist.removeSnapshot(&self.paths, d.id);
+        d.deinit(self.gpa);
+        _ = self.departed.orderedRemove(i);
+        self.state_dirty = true;
+    }
 }
 
 fn freeClient(self: *Server, client: *Client) void {
@@ -549,6 +568,7 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
         .layout => if (client == self.controller) sessionpkg.handleReport(self, frame.payload),
         .closed => if (client == self.controller) sessionpkg.handleClosed(self, frame.payload),
         .rename => sessionpkg.rename(self, client, frame.payload),
+        .remove => sessionpkg.remove(self, client, frame.payload),
         .open => {
             const req = protocol.readStruct(protocol.Prepare, frame.payload) orelse
                 return self.fail(client, "malformed open request");

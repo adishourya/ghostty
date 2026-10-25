@@ -3863,8 +3863,9 @@ else
 /// If `true`, connect to the spooky multiplexer daemon (see `spooky/` in
 /// the Ghostty source tree). Ghostty then reports its windows, tabs and
 /// splits so each window is remembered as a spooky session, and opens
-/// windows when asked to by `spooky attach`. Use it together with
-/// `command` set to the `spooky` binary.
+/// windows when asked to by `spooky attach`. Windows start as plain
+/// shells; `spooky new NAME` starts a session, and new tabs and splits
+/// opened from a spooky pane run spooky too.
 ///
 /// Only supported on Linux with GTK.
 @"spooky-integration": bool = false,

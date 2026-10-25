@@ -733,10 +733,11 @@ pub const SplitTree = extern struct {
             return;
         };
 
+        const parent = self.getActiveSurface();
         self.newSplit(
             direction,
-            self.getActiveSurface(),
-            .none,
+            parent,
+            spooky.inherit(if (parent) |p| p.core() else null, .none),
         ) catch |err| {
             log.warn("new split failed error={}", .{err});
         };

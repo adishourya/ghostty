@@ -40,38 +40,46 @@ nice -n 19 zig build -Doptimize=ReleaseFast -j4 --maxrss 8000000000
 
 ## Use
 
-Add this to the Ghostty config so every tab and split is a spooky pane, and
-Ghostty works with spooky to keep track of sessions:
+Add this to the Ghostty config so Ghostty works with spooky to keep track of
+sessions:
 
 ```
-command = /path/to/spooky
 spooky-integration = true
 ```
 
-`spooky-integration` needs a Ghostty built from this repo. Without it, spooky
-still works with sessions grouped by the "active" session (the one you last
-typed in), but it can't restore window layouts.
+Ghostty windows start as plain shells. `spooky new NAME` turns the terminal
+it runs in into a session, and new tabs and splits opened from a spooky pane
+run spooky too, joining that session. Tabs and splits opened from a plain
+shell stay plain.
+
+`spooky-integration` needs a Ghostty built from this repo. Without it, set
+`command = /path/to/spooky` so every tab and split is a spooky pane; sessions
+are then grouped by the "active" session (the one you last typed in), and
+window layouts can't be restored.
 
 ```sh
 spooky ls                # sessions: state, tabs, panes, what's running
 spooky ls -p             # every pane
-spooky new [NAME]        # a new session in a new window
+spooky new [NAME]        # a new session, here (or in a new window inside one)
 spooky attach NAME       # reopen a session's window, tabs and splits
 spooky attach -p ID      # attach to one pane (steals it from another view)
 spooky rename [OLD] NEW  # rename a session (default: the current pane's)
+spooky rm NAME...        # delete sessions: end their panes and forget them
 spooky restart-server    # save everything and restart the daemon, e.g. to upgrade
 spooky kill-server       # stop everything and forget saved state
 ```
 
-**Sessions are windows.** Every Ghostty window is a session. A new window
-gets the next free number (`1`, `2`, ...) until you `rename` it. New tabs and
-splits belong to the window's session. Ghostty reports its layout to the
-daemon whenever it changes, so `spooky attach work` (also after a reboot)
-reopens the window with the same tabs and splits, at the same ratios.
-Attaching to a session that is already open brings its window to the front.
+**Sessions are windows.** Each session is shown in one Ghostty window. A
+session started without a name gets the next free number (`1`, `2`, ...)
+until you `rename` it. Ghostty reports its layout to the daemon whenever it
+changes, so `spooky attach work` (also after a reboot) reopens the window
+with the same tabs and splits, at the same ratios. Attaching to a session
+that is already open brings its window to the front.
 
 **Closing:** closing a split or a tab ends its panes. Closing a whole window,
-or quitting Ghostty, only detaches the session.
+or quitting Ghostty, only detaches the session. `spooky rm NAME` ends all of
+a session's panes, closing its window, and forgets it, so it doesn't come
+back after a reboot either.
 
 Inside a spooky pane, `new` and `attach` never nest; they open a new window.
 A bare `spooky` inside a pane is refused.
@@ -84,7 +92,8 @@ a libghostty-vt snapshot of the screen and scrollback. All of this goes to
 `$XDG_STATE_HOME/spooky` (default `~/.local/state/spooky`). It also saves
 everything on SIGTERM, which is what a clean shutdown sends.
 
-When the daemon next starts, every pane comes back with a fresh shell in its
+When the daemon next starts (on the first `spooky` command after a reboot,
+e.g. `spooky ls` or `spooky attach NAME`), every pane comes back with a fresh shell in its
 old directory, its old scrollback, and, if a program was running, a prompt:
 
 ```

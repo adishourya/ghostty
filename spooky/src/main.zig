@@ -27,6 +27,7 @@ const usage =
     \\  attach NAME          reopen a session's window, tabs and splits
     \\  attach -p ID         attach to one pane
     \\  rename [OLD] NEW     rename a session (default: this pane's)
+    \\  rm NAME...           delete sessions: end their panes and forget them
     \\  ls [-p]              list sessions, or with -p, panes
     \\  restart-server       save everything and restart the daemon (to upgrade)
     \\  kill-server          stop the daemon and every pane, forgetting them
@@ -77,7 +78,7 @@ pub fn main(init: std.process.Init) !void {
             return fatal("attach needs a session name (see `spooky ls`) or -p PANE_ID");
         if (session.len == 0) return fatal("attach needs a session name");
         if (inside != null) std.process.exit(try client.openWindow(gpa, .session, 0, session));
-        std.process.exit(try client.attach(gpa, 0, session));
+        std.process.exit(try client.attachSession(gpa, session));
     } else if (std.mem.eql(u8, cmd, "rename")) {
         switch (rest.len) {
             1 => {
@@ -87,6 +88,11 @@ pub fn main(init: std.process.Init) !void {
             2 => std.process.exit(try client.rename(gpa, 0, rest[0], rest[1])),
             else => return fatal("usage: spooky rename [OLD] NEW"),
         }
+    } else if (std.mem.eql(u8, cmd, "rm")) {
+        if (rest.len == 0) return fatal("usage: spooky rm NAME... (see `spooky ls`)");
+        var status: u8 = 0;
+        for (rest) |name| status |= try client.remove(gpa, name);
+        std.process.exit(status);
     } else if (std.mem.eql(u8, cmd, "ls")) {
         try client.list(gpa, flag(rest, "-p") != null);
     } else if (std.mem.eql(u8, cmd, "restart-server")) {

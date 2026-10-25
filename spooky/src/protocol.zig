@@ -45,6 +45,9 @@ pub const Tag = enum(u8) {
     /// Rename a session. Payload: old name (empty: the session of pane
     /// `Rename.pane`), a zero byte, then the new name.
     rename = 12,
+    /// Delete a session: end its panes and forget it, including panes
+    /// waiting to be resurrected. Payload: the session name.
+    remove = 13,
 
     // Server to client.
 
@@ -67,6 +70,10 @@ pub const Tag = enum(u8) {
     open_window = 70,
     /// Bring a window to the front. Payload: little-endian u64 window id.
     present_window = 71,
+    /// The surfaces showing a pane, so ghostty can run spooky in new tabs
+    /// and splits opened from them. Payload: the spooky executable's path,
+    /// a zero byte, then little-endian u64 surface ids. Sent on changes.
+    surfaces = 72,
 
     _,
 };

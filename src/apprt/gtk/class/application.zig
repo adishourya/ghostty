@@ -2549,12 +2549,12 @@ const Action = struct {
                     log.warn("surface is not in a window, ignoring new_tab", .{});
                     return false;
                 };
-                window.newTab(core, .{
+                window.newTab(core, spooky.inherit(core, .{
                     .command = overrides.command,
                     .shell_integration = overrides.shell_integration,
                     .working_directory = overrides.working_directory,
                     .title = overrides.title,
-                });
+                }));
                 return true;
             },
         }

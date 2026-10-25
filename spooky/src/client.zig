@@ -76,15 +76,10 @@ pub fn openWindow(gpa: std.mem.Allocator, kind: protocol.Prepare.Kind, pane: u32
     try payload.appendSlice(gpa, std.mem.asBytes(&req));
     try payload.appendSlice(gpa, session);
 
-    {
-        const fd = try connectOrSpawn();
-        defer sys.close(fd);
-        const err = try requestPayload(gpa, fd, .open, payload.items) orelse return 0;
-        defer gpa.free(err);
-        if (!std.mem.eql(u8, err, protocol.no_controller)) {
-            std.debug.print("spooky: {s}\n", .{err});
-            return 1;
-        }
+    switch (try askController(gpa, payload.items)) {
+        .opened => return 0,
+        .failed => return 1,
+        .no_controller => {},
     }
 
     const fd = try connectOrSpawn();
@@ -98,7 +93,12 @@ pub fn openWindow(gpa: std.mem.Allocator, kind: protocol.Prepare.Kind, pane: u32
     const ghostty: [*:0]const u8 = c.getenv("SPOOKY_GHOSTTY") orelse "ghostty";
     const pid = c.fork();
     if (pid == 0) {
-        const argv = [_:null]?[*:0]const u8{ ghostty, "+new-window", null };
+        // Ghostty's own `command` may be a plain shell, so name spooky.
+        var exe_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+        const n = c.readlink("/proc/self/exe", &exe_buf, exe_buf.len);
+        exe_buf[if (n > 0) @intCast(n) else 0] = 0;
+        const exe: [*:0]const u8 = if (n > 0) &exe_buf else "spooky";
+        const argv = [_:null]?[*:0]const u8{ ghostty, "+new-window", "-e", exe, null };
         _ = c.execvp(ghostty, @ptrCast(&argv));
         c._exit(127);
     }
@@ -112,6 +112,49 @@ pub fn openWindow(gpa: std.mem.Allocator, kind: protocol.Prepare.Kind, pane: u32
         return 1;
     }
     return 0;
+}
+
+/// `spooky attach NAME` outside a pane: have ghostty reopen the session's
+/// whole window if it's connected, otherwise attach in this terminal.
+pub fn attachSession(gpa: std.mem.Allocator, session: []const u8) !u8 {
+    var payload: std.ArrayList(u8) = .empty;
+    defer payload.deinit(gpa);
+    const req: protocol.Prepare = .{ .kind = .session };
+    try payload.appendSlice(gpa, std.mem.asBytes(&req));
+    try payload.appendSlice(gpa, session);
+    return switch (try askController(gpa, payload.items)) {
+        .opened => 0,
+        .failed => 1,
+        .no_controller => attach(gpa, 0, session),
+    };
+}
+
+/// Send an `open` request (`Prepare` and a name) to ghostty via the daemon.
+fn askController(gpa: std.mem.Allocator, payload: []const u8) !enum { opened, failed, no_controller } {
+    // A daemon this command just started has no controller yet: ghostty
+    // looks for it every 500ms.
+    var tries: usize = 0;
+    while (true) : (tries += 1) {
+        const fd = try connectOrSpawn();
+        defer sys.close(fd);
+        const err = try requestPayload(gpa, fd, .open, payload) orelse return .opened;
+        defer gpa.free(err);
+        if (!std.mem.eql(u8, err, protocol.no_controller)) {
+            std.debug.print("spooky: {s}\n", .{err});
+            return .failed;
+        }
+        if (!spawned_daemon or tries >= 8) return .no_controller;
+        const ts: c.struct_timespec = .{ .tv_sec = 0, .tv_nsec = 100 * std.time.ns_per_ms };
+        _ = c.nanosleep(&ts, null);
+    }
+}
+
+/// Delete a session; see `Tag.remove`.
+pub fn remove(gpa: std.mem.Allocator, session: []const u8) !u8 {
+    // Starting the daemon brings back saved sessions, so those can go too.
+    const fd = try connectOrSpawn();
+    defer sys.close(fd);
+    return printReply(gpa, fd, .remove, session);
 }
 
 /// `spooky ls`, or with `panes`, `spooky ls -p`.
@@ -207,9 +250,13 @@ fn connect() !sys.Fd {
     return sys.connectUnix(try sys.socketPath(&path_buf));
 }
 
+/// This process started the daemon.
+var spawned_daemon = false;
+
 fn connectOrSpawn() !sys.Fd {
     if (connect()) |fd| return fd else |_| {}
     try spawnDaemon();
+    spawned_daemon = true;
     var tries: usize = 0;
     while (tries < 200) : (tries += 1) {
         if (connect()) |fd| return fd else |_| {}

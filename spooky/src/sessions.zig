@@ -100,6 +100,7 @@ fn inUse(server: *Server, name: []const u8) bool {
 pub fn controllerConnected(server: *Server, client: *Server.Client) void {
     if (server.controller) |old| if (old != client) controllerGone(server, old);
     server.controller = client;
+    server.sent_surfaces = null;
     log.info("ghostty connected", .{});
 }
 
@@ -254,6 +255,34 @@ pub fn handleClosed(server: *Server, payload: []const u8) void {
     }
 }
 
+/// Tell ghostty which surfaces show a pane, so new tabs and splits opened
+/// from them run spooky too. Plain ghostty windows stay plain.
+pub fn sendSurfaces(server: *Server) void {
+    const controller = server.controller orelse return;
+    var hasher: std.hash.Wyhash = .init(0);
+    for (server.panes.items) |pane| {
+        const client = pane.client orelse continue;
+        if (pane.dead or client.surface == 0) continue;
+        hasher.update(std.mem.asBytes(&client.surface));
+    }
+    const hash = hasher.final();
+    if (server.sent_surfaces == hash) return;
+
+    var payload: std.ArrayList(u8) = .empty;
+    defer payload.deinit(server.gpa);
+    payload.appendSlice(server.gpa, server.exe()) catch return;
+    payload.append(server.gpa, 0) catch return;
+    for (server.panes.items) |pane| {
+        const client = pane.client orelse continue;
+        if (pane.dead or client.surface == 0) continue;
+        var id: [8]u8 = undefined;
+        std.mem.writeInt(u64, &id, client.surface, .little);
+        payload.appendSlice(server.gpa, &id) catch return;
+    }
+    server.send(controller, .surfaces, payload.items);
+    server.sent_surfaces = hash;
+}
+
 // Requests ----------------------------------------------------------------
 
 /// `spooky attach NAME`, `spooky new NAME` and `spooky attach -p ID` from
@@ -392,6 +421,28 @@ pub fn rename(server: *Server, client: *Server.Client, payload: []const u8) void
     server.state_dirty = true;
     server.send(client, .text, "");
     client.closing = true;
+}
+
+/// `spooky rm NAME`: end the session's panes and forget it, including any
+/// panes waiting to be resurrected. Its window closes as its panes exit.
+pub fn remove(server: *Server, client: *Server.Client, name: []const u8) void {
+    const session = find(server, name) orelse {
+        var buf: [128]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "no session '{s}'", .{name[0..@min(name.len, 64)]}) catch "no such session";
+        return server.fail(client, msg);
+    };
+    if (session.layout) |l| server.gpa.free(l);
+    session.layout = null;
+    server.forgetDeparted(name);
+    server.state_dirty = true;
+
+    // Reply first: `spooky rm` run inside the session is hung up too.
+    server.send(client, .text, "");
+    client.closing = true;
+    for (server.panes.items) |pane| {
+        if (!pane.dead and std.mem.eql(u8, pane.session, name)) pane.hangup();
+    }
+    prune(server);
 }
 
 /// `spooky ls`: one line per session.
