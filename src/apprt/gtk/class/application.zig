@@ -14,6 +14,7 @@ const build_config = @import("../../../build_config.zig");
 const build_info = @import("../build/info.zig");
 const cli = @import("../../../cli.zig");
 const global = @import("../../../global.zig");
+const spooky = @import("../spooky.zig");
 const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const CoreApp = @import("../../../App.zig");
@@ -481,6 +482,11 @@ pub const Application = extern struct {
     /// The global allocator that all other classes should use by
     /// calling `Application.default().allocator()`. Zig code should prefer
     /// this wherever possible so we get leak detection in debug/tests.
+    /// Create and show a new window with one tab, returning it.
+    pub fn createWindow(self: *Self, parent: ?*CoreSurface, overrides: Overrides) *Window {
+        return Action.createWindow(self, parent, overrides);
+    }
+
     pub fn allocator(self: *Self) std.mem.Allocator {
         return self.private().core_app.alloc;
     }
@@ -1354,6 +1360,9 @@ pub const Application = extern struct {
 
         // Setup our global shortcuts
         self.startupGlobalShortcuts();
+
+        // Connect to the spooky multiplexer if configured
+        if (self.private().config.get().@"spooky-integration") spooky.start();
 
         // If we have any config diagnostics from loading, then we
         // show the diagnostics dialog. We show this one as a general
@@ -2552,6 +2561,11 @@ const Action = struct {
     }
 
     pub fn newWindow(self: *Application, parent: ?*CoreSurface, overrides: Overrides) !void {
+        _ = createWindow(self, parent, overrides);
+    }
+
+    /// Create and show a new window with one tab, returning it.
+    pub fn createWindow(self: *Application, parent: ?*CoreSurface, overrides: Overrides) *Window {
         // Note that we've requested a window at least once. This is used
         // to trigger quit on no windows. Note I'm not sure if this is REALLY
         // necessary, but I don't want to risk a bug where on a slow machine
@@ -2573,6 +2587,7 @@ const Action = struct {
                 .title = overrides.title,
             },
         );
+        return win;
     }
 
     fn initAndShowWindow(

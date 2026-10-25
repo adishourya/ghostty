@@ -3860,6 +3860,15 @@ else
 /// which is the old style.
 @"gtk-wide-tabs": bool = true,
 
+/// If `true`, connect to the spooky multiplexer daemon (see `spooky/` in
+/// the Ghostty source tree). Ghostty then reports its windows, tabs and
+/// splits so each window is remembered as a spooky session, and opens
+/// windows when asked to by `spooky attach`. Use it together with
+/// `command` set to the `spooky` binary.
+///
+/// Only supported on Linux with GTK.
+@"spooky-integration": bool = false,
+
 /// If `true` (default), then two-finger horizontal scrolling on a touchpad
 /// will switch between tabs. Scrolling left goes to the next tab and
 /// scrolling right goes to the previous tab. Set this to `false` to

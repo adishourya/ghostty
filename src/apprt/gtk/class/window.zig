@@ -25,6 +25,7 @@ const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseCo
 const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
+const spooky = @import("../spooky.zig");
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
@@ -1641,6 +1642,7 @@ pub const Window = extern struct {
             log.warn("close confirmation called for non-existent page", .{});
             return;
         };
+        if (gobject.ext.cast(Tab, page.getChild())) |tab| spooky.tabClosed(tab);
         tab_view.closePageFinish(page, @intFromBool(true));
     }
 
@@ -1671,6 +1673,7 @@ pub const Window = extern struct {
         // If the tab says it doesn't need confirmation then we go ahead
         // and close immediately.
         if (!tab.getNeedsConfirmQuit()) {
+            spooky.tabClosed(tab);
             priv.tab_view.closePageFinish(page, @intFromBool(true));
             return @intFromBool(true);
         }

@@ -18,6 +18,7 @@ const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseCo
 const Surface = @import("surface.zig").Surface;
 const SurfaceScrolledWindow = @import("surface_scrolled_window.zig").SurfaceScrolledWindow;
 const Overrides = @import("Overrides.zig");
+const spooky = @import("../spooky.zig");
 
 const log = std.log.scoped(.gtk_ghostty_split_tree);
 
@@ -827,6 +828,12 @@ pub const SplitTree = extern struct {
         const priv = self.private();
         const handle = priv.pending_close orelse return;
         priv.pending_close = null;
+
+        // A closed split ends its spooky pane too.
+        if (self.getTree()) |tree| switch (tree.nodes[handle.idx()]) {
+            .leaf => |surface| spooky.surfaceClosed(surface),
+            .split => {},
+        };
 
         self.removeHandle(handle) catch |err| {
             log.warn("unable to remove surface from tree: {}", .{err});
