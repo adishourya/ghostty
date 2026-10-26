@@ -28,7 +28,9 @@ zig build test
 ```
 
 Use the ReleaseFast library. A Debug libghostty-vt runs expensive integrity
-checks and parses output far too slowly for a daemon.
+checks and parses output far too slowly for a daemon. Build the spooky you
+actually run in ReleaseFast too (`zig build -Doptimize=ReleaseFast`); the
+default Debug build uses noticeably more CPU during floods of output.
 
 For `spooky-integration`, also build Ghostty itself from the repo root. This
 needs `blueprint-compiler` installed. The flags keep it from using every core
@@ -122,7 +124,9 @@ kept rather than forgotten. Panes killed by a signal are always kept.
 - **Hot path**: read pty, write socket, nothing else. VT parsing is deferred
   until the pane has been quiet for 15ms, or done right away while detached
   (so terminal queries still get answers). On `seq 1 3000000`, spooky
-  matches a bare pty: about 28 vs 30 MB/s.
+  matches a bare pty: about 29 vs 28 MB/s, and `cat` of a 24MB file
+  30 vs 30 MB/s. Past 32MB of unparsed output the daemon parses inline, so
+  a longer flood runs at parser speed, about 14 MB/s.
 - **Backpressure**: if a client falls 4MB behind, the daemon stops reading
   the pane, just as a slow terminal would.
 - **Single threaded** poll loop: no locks.
