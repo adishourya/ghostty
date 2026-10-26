@@ -35,6 +35,11 @@ const catch_up_slice = 256 * 1024;
 /// How often state.json is rewritten when something changed.
 const save_interval_ms = 2_000;
 
+/// How often to check whether resurrected shells are ready for their
+/// command, and how long to wait at most; see `resumeCommands`.
+const resume_poll_ms = 50;
+const resume_timeout_ms = 5_000;
+
 /// Minimum time between snapshots of the same pane. Snapshots include all
 /// scrollback so they are the expensive part of saving.
 const snapshot_interval_ms = 10_000;
@@ -205,8 +210,13 @@ fn tick(self: *Server) !void {
     const backlogged = for (self.panes.items) |pane| {
         if (pane.backlog.items.len > 0) break true;
     } else false;
+    const resuming = for (self.panes.items) |pane| {
+        if (pane.resume_cmd != null) break true;
+    } else false;
     const timeout: c_int = if (backlogged)
         @intCast(std.math.clamp(self.last_output_ms + idle_ms - nowMs(), 0, idle_ms))
+    else if (resuming)
+        resume_poll_ms
     else
         save_interval_ms;
     const n = c.poll(fds.items.ptr, @intCast(fds.items.len), timeout);
@@ -238,6 +248,7 @@ fn tick(self: *Server) !void {
         for (self.panes.items) |pane| pane.catchUp(catch_up_slice);
     }
 
+    if (resuming) self.resumeCommands();
     self.reap();
     self.sweep();
     sessionpkg.sendSurfaces(self);
@@ -450,9 +461,7 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
     switch (frame.tag) {
         .input => if (client.pane) |pane| {
             self.setActive(pane.session);
-            var input = frame.payload;
-            if (pane.resume_cmd != null) input = self.answerResume(client, pane, input);
-            pane.pending_in.appendSlice(self.gpa, input) catch {};
+            pane.pending_in.appendSlice(self.gpa, frame.payload) catch {};
             sys.flush(pane.master, &pane.pending_in) catch {};
         },
 
@@ -621,7 +630,6 @@ fn attach(self: *Server, client: *Client, pane: *Pane, size: protocol.Size) void
     // get SIGWINCH from this and redraw on their own as well.
     pane.resize(size);
     self.sendReplay(client, pane);
-    if (pane.resume_cmd) |cmd| self.sendResumePrompt(client, pane, cmd);
 
     // A layout report may have named this surface before it connected.
     if (client.surface != 0) sessionpkg.applyReport(self);
@@ -644,42 +652,24 @@ fn sendReplay(self: *Server, client: *Client, pane: *Pane) void {
     }
 }
 
-/// Draw the resume prompt on the client's bottom row. It is shown only to
-/// the client and never enters the pane's VT state.
-fn sendResumePrompt(self: *Server, client: *Client, pane: *Pane, cmd: []const u8) void {
-    var buf: [1024]u8 = undefined;
-    const max_cmd = @min(cmd.len, @as(usize, pane.size.cols) -| 40, 512);
-    const shown = cmd[0..max_cmd];
-    const prompt = std.fmt.bufPrint(
-        &buf,
-        "\x1b7\x1b[{d};1H\x1b[2K\x1b[7m \u{23CE} Enter: resume \x1b[1m{s}{s}\x1b[22m   Esc: shell \x1b[0m\x1b8",
-        .{ pane.size.rows, shown, if (shown.len < cmd.len) "\u{2026}" else "" },
-    ) catch return;
-    self.send(client, .output, prompt);
-}
-
-/// Handle a keypress while the resume prompt is up. Enter types the saved
-/// command into the new shell, anything else dismisses the prompt. Returns
-/// the input that should still reach the shell.
-fn answerResume(self: *Server, client: *Client, pane: *Pane, input: []const u8) []const u8 {
-    const cmd = pane.resume_cmd orelse return input;
-    if (input.len == 0) return input;
-    pane.resume_cmd = null;
-    defer self.gpa.free(cmd);
-
-    // Repaint to remove the prompt.
-    self.sendReplay(client, pane);
-
-    switch (input[0]) {
-        '\r', '\n' => {
-            pane.pending_in.appendSlice(self.gpa, cmd) catch {};
-            pane.pending_in.append(self.gpa, '\r') catch {};
-            return input[1..];
-        },
-        // A lone Esc just dismisses; an escape sequence (arrow key, ...)
-        // dismisses and is passed on.
-        0x1b => return if (input.len == 1) input[1..] else input,
-        else => return input,
+/// Run again what resurrected panes were running: type each command into
+/// its new shell, so it also ends up in history. The shell is ready once
+/// its line editor has taken the pty out of canonical mode; typed any
+/// earlier, the tty would echo the command before the prompt.
+fn resumeCommands(self: *Server) void {
+    const now = nowMs();
+    for (self.panes.items) |pane| {
+        const cmd = pane.resume_cmd orelse continue;
+        if (pane.dead) continue;
+        var t: c.struct_termios = undefined;
+        const ready = c.tcgetattr(pane.master, &t) == 0 and t.c_lflag & c.ICANON == 0;
+        if (!ready and now < pane.resume_deadline_ms) continue;
+        log.info("pane {d}: resuming {s}", .{ pane.id, cmd });
+        pane.pending_in.appendSlice(self.gpa, cmd) catch {};
+        pane.pending_in.append(self.gpa, '\r') catch {};
+        sys.flush(pane.master, &pane.pending_in) catch {};
+        pane.resume_cmd = null;
+        self.gpa.free(cmd);
     }
 }
 
@@ -956,6 +946,7 @@ fn restore(self: *Server) void {
             log.err("restoring pane {d} failed: {}", .{ ps.id, err });
             continue;
         };
+        pane.resume_deadline_ms = nowMs() + resume_timeout_ms;
         self.panes.append(self.gpa, pane) catch {
             pane.destroy(self.gpa);
             continue;
@@ -964,7 +955,7 @@ fn restore(self: *Server) void {
         log.info("restored pane {d} in {s}{s}{s}", .{
             ps.id,
             ps.cwd,
-            if (resume_cmd != null) ", offering: " else "",
+            if (resume_cmd != null) ", resuming: " else "",
             resume_cmd orelse "",
         });
     }

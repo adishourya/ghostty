@@ -108,15 +108,11 @@ a libghostty-vt snapshot of the screen and scrollback. All of this goes to
 everything on SIGTERM, which is what a clean shutdown sends.
 
 When the daemon next starts (on the first `spooky` command after a reboot,
-e.g. `spooky ls` or `spooky attach NAME`), every pane comes back with a fresh shell in its
-old directory, its old scrollback, and, if a program was running, a prompt:
-
-```
- ⏎ Enter: resume nvim src/main.zig   Esc: shell
-```
-
-Enter types the command into the new shell, so it also ends up in history.
-Esc dismisses the prompt. Any other key dismisses it and goes to the shell.
+e.g. `spooky ls` or `spooky attach NAME`), every pane comes back with a fresh
+shell in its old directory and its old scrollback, and whatever was running
+in it is started again. The daemon types the command into the new shell once
+its line editor is ready (or after 5 seconds at most), so it also ends up in
+history.
 
 Shells killed during shutdown slightly before the daemon (within 5s) are
 kept rather than forgotten. Panes killed by a signal are always kept.

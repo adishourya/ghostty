@@ -22,7 +22,7 @@ pub const PaneState = struct {
     rows: u16,
     /// argv of the program in the foreground when it wasn't the shell.
     command: ?[]const []const u8 = null,
-    /// A resume prompt that was restored but not yet answered, as a shell
+    /// A command restored but not yet typed into the new shell, as a shell
     /// command line. Carried over so a second reboot doesn't lose it.
     pending_resume: ?[]const u8 = null,
 };

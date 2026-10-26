@@ -63,8 +63,12 @@ fg: ?persist.Foreground = null,
 claimable: bool = false,
 
 /// For a pane resurrected after a reboot: the shell command line that was
-/// running in the foreground. The user is offered to run it again on attach.
+/// running in the foreground, to be typed into the new shell once it's
+/// ready. See `Server.resumeCommands`.
 resume_cmd: ?[]u8 = null,
+/// Monotonic ms after which `resume_cmd` is typed even if the shell never
+/// looked ready.
+resume_deadline_ms: i64 = 0,
 
 /// Lines of scrollback kept in memory and persisted.
 const scrollback_lines: usize = 10_000;
