@@ -2280,12 +2280,13 @@ pub const Surface = extern struct {
         }.logical;
         const padding_x = config.@"window-padding-x";
         const padding_y = config.@"window-padding-y";
+        const border: u32 = 2 * @as(u32, config.@"split-border-width");
 
         priv.split_min_size = .{
-            .width = cell_width +
+            .width = cell_width + border +
                 padding(padding_x.top_left) +
                 padding(padding_x.bottom_right),
-            .height = cell_height +
+            .height = cell_height + border +
                 padding(padding_y.top_left) +
                 padding(padding_y.bottom_right),
         };
@@ -2458,6 +2459,18 @@ pub const Surface = extern struct {
                 &valign,
             );
         }
+    }
+
+    /// Mark a split, and the focused one, for `split-border-width`.
+    fn propSplitBorder(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const widget = self.as(gtk.Widget);
+        if (priv.is_split) widget.addCssClass("split-border") else widget.removeCssClass("split-border");
+        if (priv.focused) widget.addCssClass("split-focused") else widget.removeCssClass("split-focused");
     }
 
     fn propError(
@@ -3977,6 +3990,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("child_exited_close", &childExitedClose);
             class.bindTemplateCallback("context_menu_closed", &contextMenuClosed);
             class.bindTemplateCallback("notify_config", &propConfig);
+            class.bindTemplateCallback("notify_split_border", &propSplitBorder);
             class.bindTemplateCallback("notify_error", &propError);
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);

@@ -157,6 +157,17 @@ pub fn remove(gpa: std.mem.Allocator, session: []const u8) !u8 {
     return printReply(gpa, fd, .remove, session);
 }
 
+/// `spooky session`: print the session of pane `id`.
+pub fn printSession(gpa: std.mem.Allocator, id: u32) !u8 {
+    const fd = try connect();
+    defer sys.close(fd);
+    var payload: [4]u8 = undefined;
+    std.mem.writeInt(u32, &payload, id, .little);
+    const code = try printReply(gpa, fd, .session, &payload);
+    if (code == 0) try sys.writeAll(1, "\n");
+    return code;
+}
+
 /// `spooky ls`, or with `panes`, `spooky ls -p`.
 pub fn list(gpa: std.mem.Allocator, panes: bool) !void {
     // Starting the daemon here brings back saved sessions after a reboot.

@@ -227,6 +227,14 @@ fn execChild(master: c_int, slave: c_int, opts: Options) noreturn {
     // Lets spooky tell it is running inside this pane even if the env was
     // inherited elsewhere, e.g. by a ghostty launched from this shell.
     if (c.ttyname(0)) |tty| _ = c.setenv("SPOOKY_TTY", tty, 1);
+    // For prompts. A later `spooky rename` can't reach a running shell;
+    // `spooky session` always prints the current name.
+    var session_buf: [256]u8 = undefined;
+    if (opts.session.len > 0 and opts.session.len < session_buf.len) {
+        @memcpy(session_buf[0..opts.session.len], opts.session);
+        session_buf[opts.session.len] = 0;
+        _ = c.setenv("SPOOKY_SESSION", @ptrCast(&session_buf), 1);
+    } else _ = c.unsetenv("SPOOKY_SESSION");
 
     const shell: [*:0]const u8 = c.getenv("SHELL") orelse "/bin/sh";
     const argv = [_:null]?[*:0]const u8{ shell, null };

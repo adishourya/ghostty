@@ -1054,6 +1054,34 @@ pub const Application = extern struct {
             unfocused_fill.b,
         });
 
+        if (config.@"split-border-width" > 0) {
+            try writer.print(
+                \\.surface.split-border {{
+                \\  border: {d}px solid color-mix(in srgb, rgb({d},{d},{d}), rgb({d},{d},{d}) 75%);
+                \\}}
+                \\.surface.split-border.split-focused {{
+                \\  border-color: var(--accent-color);
+                \\}}
+                \\
+            , .{
+                config.@"split-border-width",
+                config.foreground.r,
+                config.foreground.g,
+                config.foreground.b,
+                config.background.r,
+                config.background.g,
+                config.background.b,
+            });
+            if (config.@"split-border-color") |color| try writer.print(
+                \\.surface.split-border {{ border-color: rgb({d},{d},{d}); }}
+                \\
+            , .{ color.r, color.g, color.b });
+            if (config.@"split-border-focused-color") |color| try writer.print(
+                \\.surface.split-border.split-focused {{ border-color: rgb({d},{d},{d}); }}
+                \\
+            , .{ color.r, color.g, color.b });
+        }
+
         if (config.@"split-divider-color") |color| {
             try writer.print(
                 \\.window .split paned > separator {{

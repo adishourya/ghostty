@@ -144,6 +144,12 @@ label.resize-overlay {
 /*
  * Drag and drop overlay
  */
+/* The spooky session a window shows, at the start of its tab bar. */
+.spooky-session {
+  padding: 0 12px;
+  font-weight: bold;
+}
+
 .drag-handle {
   background-color: rgba(0, 0, 0, 0.15);
   opacity: 0;

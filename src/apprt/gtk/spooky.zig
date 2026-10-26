@@ -10,7 +10,8 @@
 //!     in it end (closing a whole window only detaches its session),
 //!   - open windows the daemon asks for, e.g. for `spooky attach NAME`,
 //!   - run spooky in new tabs and splits opened from a spooky pane, so they
-//!     join its session. Everything else stays a plain shell.
+//!     join its session. Everything else stays a plain shell,
+//!   - show each window's session in its tab bar.
 //!
 //! The wire format is defined in spooky/src/protocol.zig and the layout
 //! JSON in spooky/src/layout.zig.
@@ -72,11 +73,27 @@ var state: struct {
     in: std.ArrayList(u8) = .empty,
     /// The last layout sent, so only changes are sent.
     last_layout: std.ArrayList(u8) = .empty,
-    /// From the daemon: the spooky executable, and the surfaces that show
-    /// a spooky pane. See `inherit`.
-    exe: ?[:0]u8 = null,
-    surfaces: std.ArrayList(u64) = .empty,
+    /// From the daemon: the spooky executable, the surfaces that show a
+    /// spooky pane and the windows that show a session. See `inherit`.
+    surfaces: ?std.json.Parsed(Surfaces) = null,
 } = .{};
+
+/// See spooky/src/layout.zig.
+const Surfaces = struct {
+    exe: [:0]const u8,
+    surfaces: []const Entry = &.{},
+    windows: []const Entry = &.{},
+
+    const Entry = struct {
+        id: u64,
+        session: [:0]const u8,
+    };
+
+    fn find(entries: []const Entry, id: u64) ?[:0]const u8 {
+        for (entries) |e| if (e.id == id) return e.session;
+        return null;
+    }
+};
 
 /// Start connecting to the daemon. Safe to call more than once.
 pub fn start() void {
@@ -112,18 +129,18 @@ pub fn tabClosed(tab: *Tab) void {
 }
 
 /// Overrides for a new tab or split opened from `parent`. One opened from
-/// a spooky pane runs `spooky new`, which joins the window's session.
+/// a spooky pane runs `spooky new SESSION`, joining the pane's session.
 pub fn inherit(parent: ?*CoreSurface, overrides: Overrides) Overrides {
     if (overrides.command != null) return overrides;
     const core = parent orelse return overrides;
-    const exe = state.exe orelse return overrides;
-    if (std.mem.indexOfScalar(u64, state.surfaces.items, core.id) == null) return overrides;
+    const known = state.surfaces orelse return overrides;
+    const session = Surfaces.find(known.value.surfaces, core.id) orelse return overrides;
     const argv = struct {
-        var buf: [2][:0]const u8 = undefined;
+        var buf: [3][:0]const u8 = undefined;
     };
-    argv.buf = .{ exe, "new" };
+    argv.buf = .{ known.value.exe, "new", session };
     var result = overrides;
-    result.command = .{ .direct = &argv.buf };
+    result.command = .{ .direct = argv.buf[0..if (session.len > 0) 3 else 2] };
     return result;
 }
 
@@ -176,7 +193,9 @@ fn disconnect(remove_watch: bool) void {
     state.watch = 0;
     _ = linux.close(state.fd);
     state.fd = -1;
-    state.surfaces.clearRetainingCapacity();
+    if (state.surfaces) |old| old.deinit();
+    state.surfaces = null;
+    labelWindows();
     log.info("disconnected from spooky", .{});
 }
 
@@ -252,18 +271,22 @@ fn handle(tag: Tag, payload: []const u8) void {
 
 fn setSurfaces(payload: []const u8) !void {
     const alloc = Application.default().allocator();
-    const sep = std.mem.indexOfScalar(u8, payload, 0) orelse return error.InvalidPayload;
-    const exe = payload[0..sep];
-    if (state.exe == null or !std.mem.eql(u8, state.exe.?, exe)) {
-        const owned = try alloc.dupeSentinel(u8, exe, 0);
-        if (state.exe) |old| alloc.free(old);
-        state.exe = owned;
-    }
-    state.surfaces.clearRetainingCapacity();
-    var ids = payload[sep + 1 ..];
-    while (ids.len >= 8) : (ids = ids[8..]) {
-        try state.surfaces.append(alloc, std.mem.readInt(u64, ids[0..8], .little));
-    }
+    const parsed = try std.json.parseFromSlice(Surfaces, alloc, payload, .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    });
+    if (state.surfaces) |old| old.deinit();
+    state.surfaces = parsed;
+    labelWindows();
+}
+
+/// Show each window's session, if it has one, in its tab bar.
+fn labelWindows() void {
+    var it = windows();
+    while (it.next()) |window| window.setSpookySession(session: {
+        const known = state.surfaces orelse break :session null;
+        break :session Surfaces.find(known.value.windows, @intFromPtr(window));
+    });
 }
 
 // Layout ------------------------------------------------------------------

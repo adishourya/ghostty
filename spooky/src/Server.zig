@@ -492,8 +492,13 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
             }
 
             // With ghostty as the controller, the window the pane shows up
-            // in decides its session.
-            if (session.len == 0 and self.controller == null) session = self.active();
+            // in decides its session; a pane outside any session's window
+            // starts a new one.
+            var name_buf: [16]u8 = undefined;
+            if (session.len == 0) session = if (self.controller == null)
+                self.active()
+            else
+                sessionpkg.forSurface(self, client.surface, &name_buf);
             if (session.len > 0) {
                 self.setActive(session);
                 _ = sessionpkg.ensure(self, session) catch {};
@@ -569,6 +574,13 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
         .closed => if (client == self.controller) sessionpkg.handleClosed(self, frame.payload),
         .rename => sessionpkg.rename(self, client, frame.payload),
         .remove => sessionpkg.remove(self, client, frame.payload),
+        .session => {
+            const id = protocol.readStruct(u32, frame.payload) orelse
+                return self.fail(client, "malformed session request");
+            const pane = self.findPane(id) orelse return self.fail(client, "no such pane");
+            self.send(client, .text, pane.session);
+            client.closing = true;
+        },
         .open => {
             const req = protocol.readStruct(protocol.Prepare, frame.payload) orelse
                 return self.fail(client, "malformed open request");

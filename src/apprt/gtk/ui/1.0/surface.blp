@@ -282,6 +282,8 @@ template $GhosttySurface: Adw.Bin {
   ]
 
   notify::config => $notify_config();
+  notify::focused => $notify_split_border();
+  notify::is-split => $notify_split_border();
   notify::error => $notify_error();
   notify::mouse-hover-url => $notify_mouse_hover_url();
   notify::mouse-hidden => $notify_mouse_hidden();

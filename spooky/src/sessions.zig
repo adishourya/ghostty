@@ -255,8 +255,9 @@ pub fn handleClosed(server: *Server, payload: []const u8) void {
     }
 }
 
-/// Tell ghostty which surfaces show a pane, so new tabs and splits opened
-/// from them run spooky too. Plain ghostty windows stay plain.
+/// Tell ghostty which surfaces show a pane and which windows show a
+/// session, so new tabs and splits opened from a pane run spooky too and
+/// each window can show its session's name. Only sent when it changed.
 pub fn sendSurfaces(server: *Server) void {
     const controller = server.controller orelse return;
     var hasher: std.hash.Wyhash = .init(0);
@@ -264,23 +265,75 @@ pub fn sendSurfaces(server: *Server) void {
         const client = pane.client orelse continue;
         if (pane.dead or client.surface == 0) continue;
         hasher.update(std.mem.asBytes(&client.surface));
+        hasher.update(pane.session);
+        hasher.update(&.{0});
+    }
+    hasher.update(&.{0xff});
+    for (server.sessions.items) |s| {
+        const window = s.window orelse continue;
+        hasher.update(std.mem.asBytes(&window));
+        hasher.update(s.name);
+        hasher.update(&.{0});
     }
     const hash = hasher.final();
     if (server.sent_surfaces == hash) return;
 
-    var payload: std.ArrayList(u8) = .empty;
-    defer payload.deinit(server.gpa);
-    payload.appendSlice(server.gpa, server.exe()) catch return;
-    payload.append(server.gpa, 0) catch return;
+    var arena_state: std.heap.ArenaAllocator = .init(server.gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var surfaces: std.ArrayList(layout.Surfaces.Entry) = .empty;
     for (server.panes.items) |pane| {
         const client = pane.client orelse continue;
         if (pane.dead or client.surface == 0) continue;
-        var id: [8]u8 = undefined;
-        std.mem.writeInt(u64, &id, client.surface, .little);
-        payload.appendSlice(server.gpa, &id) catch return;
+        surfaces.append(arena, .{ .id = client.surface, .session = pane.session }) catch return;
     }
-    server.send(controller, .surfaces, payload.items);
+    var windows: std.ArrayList(layout.Surfaces.Entry) = .empty;
+    for (server.sessions.items) |s| {
+        const window = s.window orelse continue;
+        windows.append(arena, .{ .id = window, .session = s.name }) catch return;
+    }
+    const json = std.json.Stringify.valueAlloc(arena, layout.Surfaces{
+        .exe = server.exe(),
+        .surfaces = surfaces.items,
+        .windows = windows.items,
+    }, layout.stringify_options) catch return;
+    server.send(controller, .surfaces, json);
     server.sent_surfaces = hash;
+}
+
+/// The session for a new pane in `surface`: that of the window it's in,
+/// or a new one.
+pub fn forSurface(server: *Server, surface: u64, buf: []u8) []const u8 {
+    if (windowOf(server, surface)) |window| {
+        for (server.sessions.items) |s| {
+            if (s.window == window) return s.name;
+        }
+    }
+    return autoName(server, buf);
+}
+
+/// The window containing `surface`, per ghostty's last report.
+fn windowOf(server: *Server, surface: u64) ?u64 {
+    if (surface == 0) return null;
+    const raw = server.last_report orelse return null;
+    var arena_state: std.heap.ArenaAllocator = .init(server.gpa);
+    defer arena_state.deinit();
+    const report = std.json.parseFromSliceLeaky(layout.Report, arena_state.allocator(), raw, layout.parse_options) catch return null;
+
+    const Ctx = struct {
+        surface: u64,
+        found: *bool,
+
+        fn leaf(self: @This(), node: layout.Node) void {
+            if (node.surface == self.surface) self.found.* = true;
+        }
+    };
+    for (report.windows) |win| {
+        var found = false;
+        for (win.tabs) |tab| layout.forEachLeaf(tab, Ctx{ .surface = surface, .found = &found }, Ctx.leaf);
+        if (found) return win.id;
+    }
+    return null;
 }
 
 // Requests ----------------------------------------------------------------

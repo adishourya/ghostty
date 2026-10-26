@@ -28,6 +28,7 @@ const usage =
     \\  attach -p ID         attach to one pane
     \\  rename [OLD] NEW     rename a session (default: this pane's)
     \\  rm NAME...           delete sessions: end their panes and forget them
+    \\  session              print this pane's session (also in $SPOOKY_SESSION)
     \\  ls [-p]              list sessions, or with -p, panes
     \\  restart-server       save everything and restart the daemon (to upgrade)
     \\  kill-server          stop the daemon and every pane, forgetting them
@@ -93,6 +94,9 @@ pub fn main(init: std.process.Init) !void {
         var status: u8 = 0;
         for (rest) |name| status |= try client.remove(gpa, name);
         std.process.exit(status);
+    } else if (std.mem.eql(u8, cmd, "session")) {
+        const id = inside orelse std.process.exit(1);
+        std.process.exit(try client.printSession(gpa, id));
     } else if (std.mem.eql(u8, cmd, "ls")) {
         try client.list(gpa, flag(rest, "-p") != null);
     } else if (std.mem.eql(u8, cmd, "restart-server")) {

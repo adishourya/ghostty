@@ -48,6 +48,8 @@ pub const Tag = enum(u8) {
     /// Delete a session: end its panes and forget it, including panes
     /// waiting to be resurrected. Payload: the session name.
     remove = 13,
+    /// The name of a pane's session, as text. Payload: u32 pane id.
+    session = 14,
 
     // Server to client.
 
@@ -70,9 +72,10 @@ pub const Tag = enum(u8) {
     open_window = 70,
     /// Bring a window to the front. Payload: little-endian u64 window id.
     present_window = 71,
-    /// The surfaces showing a pane, so ghostty can run spooky in new tabs
-    /// and splits opened from them. Payload: the spooky executable's path,
-    /// a zero byte, then little-endian u64 surface ids. Sent on changes.
+    /// Which surfaces show a pane and which windows show a session, so
+    /// ghostty can run spooky in new tabs and splits opened from a pane and
+    /// show each window's session. Payload: JSON `layout.Surfaces`. Sent
+    /// whenever it changes.
     surfaces = 72,
 
     _,

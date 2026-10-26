@@ -295,9 +295,13 @@ pub const Window = extern struct {
         /// The manually overridden title.
         title_override: ?[:0]const u8 = null,
 
+        /// This window shows a spooky session; see `setSpookySession`.
+        spooky_session: bool = false,
+
         // Template bindings
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
+        spooky_session_label: *gtk.Label,
         tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
@@ -1101,6 +1105,20 @@ pub const Window = extern struct {
         };
     }
 
+    /// Show the name of the spooky session this window shows at the start
+    /// of its tab bar, or hide it with null. The tab bar of a session's
+    /// window stays visible with a single tab, so the name can be seen.
+    pub fn setSpookySession(self: *Self, name_: ?[:0]const u8) void {
+        const priv = self.private();
+        const name = if (name_) |n| if (n.len > 0) n else null else null;
+        const widget = priv.spooky_session_label.as(gtk.Widget);
+        if (name) |n| priv.spooky_session_label.setLabel(n.ptr);
+        widget.setVisible(@intFromBool(name != null));
+        if (priv.spooky_session == (name != null)) return;
+        priv.spooky_session = name != null;
+        self.as(gobject.Object).notifyByPspec(properties.@"tabs-autohide".impl.param_spec);
+    }
+
     fn getTabsAutohide(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
@@ -1110,8 +1128,8 @@ pub const Window = extern struct {
             .tabs => false,
 
             .native => switch (config.@"window-show-tab-bar") {
-                // Auto we always autohide... obviously.
-                .auto => true,
+                // Auto we autohide, except to show a spooky session.
+                .auto => !priv.spooky_session,
 
                 // Always we never autohide because we always show the tab bar.
                 .always => false,
@@ -2343,6 +2361,7 @@ pub const Window = extern struct {
             // Bindings
             class.bindTemplateChildPrivate("tab_overview", .{});
             class.bindTemplateChildPrivate("tab_bar", .{});
+            class.bindTemplateChildPrivate("spooky_session_label", .{});
             class.bindTemplateChildPrivate("tab_view", .{});
             class.bindTemplateChildPrivate("toolbar", .{});
             class.bindTemplateChildPrivate("toast_overlay", .{});

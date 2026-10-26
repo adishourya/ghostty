@@ -65,6 +65,7 @@ spooky attach NAME       # reopen a session's window, tabs and splits
 spooky attach -p ID      # attach to one pane (steals it from another view)
 spooky rename [OLD] NEW  # rename a session (default: the current pane's)
 spooky rm NAME...        # delete sessions: end their panes and forget them
+spooky session           # print this pane's session
 spooky restart-server    # save everything and restart the daemon, e.g. to upgrade
 spooky kill-server       # stop everything and forget saved state
 ```
@@ -75,6 +76,20 @@ until you `rename` it. Ghostty reports its layout to the daemon whenever it
 changes, so `spooky attach work` (also after a reboot) reopens the window
 with the same tabs and splits, at the same ratios. Attaching to a session
 that is already open brings its window to the front.
+
+**Which session:** a session's window shows its name at the start of the
+tab bar, which then stays visible even with a single tab (style it with the
+`.spooky-session` class in `gtk-custom-css`). Shells in a pane get
+`SPOOKY_SESSION`. A later `rename` can't change a running shell's
+environment, so to keep a prompt current, refresh it before each prompt:
+
+```zsh
+# ~/.zshrc
+spooky_prompt() { [[ -n $SPOOKY_PANE ]] && SPOOKY_SESSION=$(spooky session 2>/dev/null) }
+precmd_functions+=(spooky_prompt)
+setopt prompt_subst
+RPROMPT='${SPOOKY_SESSION:+[$SPOOKY_SESSION]}'
+```
 
 **Closing:** closing a split or a tab ends its panes. Closing a whole window,
 or quitting Ghostty, only detaches the session. `spooky rm NAME` ends all of

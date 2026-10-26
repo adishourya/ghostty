@@ -1082,6 +1082,26 @@ palette: Palette = .{},
 /// Available since: 1.1.0
 @"split-divider-color": ?Color = null,
 
+/// The width of a border drawn around each split, in pixels, so that each
+/// split is framed on its own and the focused one can be told apart by
+/// `split-border-focused-color`. Borders are only drawn when a tab has more
+/// than one split. Zero, the default, draws none.
+///
+/// Only supported on Linux with GTK.
+@"split-border-width": u8 = 0,
+
+/// The color of split borders; see `split-border-width`. Defaults to a mix
+/// of the foreground and background colors.
+///
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
+@"split-border-color": ?Color = null,
+
+/// The color of the focused split's border; see `split-border-width`.
+/// Defaults to the accent color.
+///
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
+@"split-border-focused-color": ?Color = null,
+
 /// Control when Ghostty preserves a zoomed split. Under normal circumstances,
 /// any operation that changes focus or layout of the split tree in a window
 /// will unzoom any zoomed split. This configuration allows you to control

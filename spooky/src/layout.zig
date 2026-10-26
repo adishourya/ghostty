@@ -51,6 +51,19 @@ pub const Open = struct {
     tabs: []Node,
 };
 
+/// Sent to ghostty: the surfaces that show a pane and the windows that
+/// show a session, each with the session's name.
+pub const Surfaces = struct {
+    exe: []const u8,
+    surfaces: []const Entry,
+    windows: []const Entry,
+
+    pub const Entry = struct {
+        id: u64,
+        session: []const u8,
+    };
+};
+
 pub const parse_options: std.json.ParseOptions = .{
     .ignore_unknown_fields = true,
     .allocate = .alloc_always,

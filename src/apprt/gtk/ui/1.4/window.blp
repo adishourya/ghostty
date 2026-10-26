@@ -96,24 +96,37 @@ template $GhosttyWindow: Adw.ApplicationWindow {
         [start]
         Gtk.Box {
           orientation: horizontal;
-          visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
 
-          Gtk.WindowControls {
-            side: start;
+          Gtk.Box {
+            orientation: horizontal;
+            visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
+
+            Gtk.WindowControls {
+              side: start;
+            }
+
+            Adw.SplitButton {
+              styles [
+                "flat",
+              ]
+
+              clicked => $new_tab();
+              icon-name: "tab-new-symbolic";
+              tooltip-text: _("New Tab");
+              dropdown-tooltip: _("New Split");
+              menu-model: split_menu;
+              can-focus: false;
+              focus-on-click: false;
+            }
           }
 
-          Adw.SplitButton {
+          // The spooky session this window shows, with spooky-integration.
+          Gtk.Label spooky_session_label {
             styles [
-              "flat",
+              "spooky-session",
             ]
 
-            clicked => $new_tab();
-            icon-name: "tab-new-symbolic";
-            tooltip-text: _("New Tab");
-            dropdown-tooltip: _("New Split");
-            menu-model: split_menu;
-            can-focus: false;
-            focus-on-click: false;
+            visible: false;
           }
         }
 
