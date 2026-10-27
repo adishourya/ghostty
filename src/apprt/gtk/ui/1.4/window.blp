@@ -121,12 +121,21 @@ template $GhosttyWindow: Adw.ApplicationWindow {
           }
 
           // The spooky session this window shows, with spooky-integration.
-          Gtk.Label spooky_session_label {
+          Gtk.Box spooky_session_box {
             styles [
               "spooky-session",
             ]
 
+            orientation: horizontal;
             visible: false;
+
+            Gtk.Label spooky_animal_label {
+              styles [
+                "spooky-animal",
+              ]
+            }
+
+            Gtk.Label spooky_session_label {}
           }
         }
 
