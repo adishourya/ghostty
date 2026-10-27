@@ -86,6 +86,29 @@ pub fn foreground(gpa: std.mem.Allocator, master: sys.Fd, shell_pid: c.pid_t) !F
 
 /// Join argv into a line a POSIX-ish shell will parse back into the same
 /// words, single-quoting anything that isn't obviously safe.
+/// Programs that are run again in a resurrected pane: editors, so files
+/// are open again as they were left. Anything else could be expensive or
+/// unsafe to repeat, so it's only remembered for `spooky ls`.
+const resumable = [_][]const u8{ "vi", "vim", "nvim", "hx", "helix" };
+
+/// Whether a resurrected pane should run `command` (a shell command line,
+/// as made by `shellJoin`) again.
+pub fn shouldResume(command: []const u8) bool {
+    const end = std.mem.indexOfScalar(u8, command, ' ') orelse command.len;
+    const name = std.fs.path.basename(command[0..end]);
+    for (resumable) |r| if (std.mem.eql(u8, name, r)) return true;
+    return false;
+}
+
+test shouldResume {
+    try std.testing.expect(shouldResume("nvim src/main.zig"));
+    try std.testing.expect(shouldResume("/usr/bin/hx"));
+    try std.testing.expect(shouldResume("vim"));
+    try std.testing.expect(!shouldResume("cargo build --release"));
+    try std.testing.expect(!shouldResume("nvimx foo"));
+    try std.testing.expect(!shouldResume("'my vim' foo"));
+}
+
 pub fn shellJoin(gpa: std.mem.Allocator, argv: []const []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);

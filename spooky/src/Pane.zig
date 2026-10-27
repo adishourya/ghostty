@@ -62,9 +62,9 @@ fg: ?persist.Foreground = null,
 /// for a session's panes after `spooky attach -s`.
 claimable: bool = false,
 
-/// For a pane resurrected after a reboot: the shell command line that was
-/// running in the foreground, to be typed into the new shell once it's
-/// ready. See `Server.resumeCommands`.
+/// For a pane resurrected after a reboot: the editor command line that
+/// was running in the foreground, to be typed into the new shell once it's
+/// ready. See `Server.resumeCommands` and `persist.shouldResume`.
 resume_cmd: ?[]u8 = null,
 /// Monotonic ms after which `resume_cmd` is typed even if the shell never
 /// looked ready.

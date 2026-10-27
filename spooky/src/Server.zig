@@ -926,13 +926,18 @@ fn restore(self: *Server) void {
         const snap = persist.readSnapshot(self.gpa, &self.paths, ps.id);
         defer if (snap) |s| self.gpa.free(s);
 
-        const resume_cmd: ?[]u8 = if (ps.command) |argv|
+        var resume_cmd: ?[]u8 = if (ps.command) |argv|
             persist.shellJoin(self.gpa, argv) catch null
         else if (ps.pending_resume) |cmd|
             self.gpa.dupe(u8, cmd) catch null
         else
             null;
         defer if (resume_cmd) |cmd| self.gpa.free(cmd);
+        if (resume_cmd) |cmd| if (!persist.shouldResume(cmd)) {
+            log.info("pane {d}: not resuming {s}", .{ ps.id, cmd });
+            self.gpa.free(cmd);
+            resume_cmd = null;
+        };
 
         const pane = Pane.create(self.gpa, .{
             .id = ps.id,

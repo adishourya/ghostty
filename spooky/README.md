@@ -111,10 +111,12 @@ everything on SIGTERM, which is what a clean shutdown sends.
 
 When the daemon next starts (on the first `spooky` command after a reboot,
 e.g. `spooky ls` or `spooky attach NAME`), every pane comes back with a fresh
-shell in its old directory and its old scrollback, and whatever was running
-in it is started again. The daemon types the command into the new shell once
-its line editor is ready (or after 5 seconds at most), so it also ends up in
-history.
+shell in its old directory and its old scrollback. If an editor (`vi`,
+`vim`, `nvim`, `hx` or `helix`) was running in it, it's opened again on the
+same files: the daemon types the command into the new shell once its line
+editor is ready (or after 5 seconds at most), so it also ends up in history.
+Nothing else is run again, since repeating an arbitrary command (a build, a
+deploy) could be expensive or unsafe.
 
 Shells killed during shutdown slightly before the daemon (within 5s) are
 kept rather than forgotten. Panes killed by a signal are always kept.
