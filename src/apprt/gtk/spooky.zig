@@ -396,14 +396,15 @@ fn openWindow(payload: []const u8) !void {
     if (request.tabs.len == 0) return;
 
     var window: ?*Window = null;
-    for (request.tabs) |tab_node| {
+    // The split to focus: the first one of the active tab.
+    var focus: ?*Surface = null;
+    for (request.tabs, 0..) |tab_node, i| {
         const overrides = try commandOverrides(arena, firstLeaf(tab_node));
         if (window) |w| {
             w.newTab(null, overrides);
         } else {
             window = app.createWindow(null, overrides);
         }
-        if (tab_node.split == null) continue;
 
         // The tab starts with a single surface for the first leaf; build
         // the rest of the tree around it.
@@ -412,6 +413,9 @@ fn openWindow(payload: []const u8) !void {
         const tab = gobject.ext.cast(Tab, page.getChild()) orelse continue;
         const split_tree = tab.getSplitTree();
         const first = (split_tree.getTree() orelse continue).nodes[0].leaf;
+        if (i == request.active) focus = first;
+        if (tab_node.split == null) continue;
+
         var used_first = false;
         var tree = try buildTree(alloc, arena, tab_node, split_tree, first, &used_first);
         defer tree.deinit();
@@ -423,7 +427,26 @@ fn openWindow(payload: []const u8) !void {
     if (request.active < tab_view.getNPages()) {
         tab_view.setSelectedPage(tab_view.getNthPage(@intCast(request.active)));
     }
+    settleFocus(w, focus);
     w.as(gtk.Window).present();
+}
+
+/// A new surface assumes it has the focus, and the ones built here never
+/// got it, so each split would look and act focused (borders, cursors,
+/// focus reports). Leave only `focus` focused.
+fn settleFocus(window: *Window, focus: ?*Surface) void {
+    const tab_view = window.getTabView();
+    const n: usize = @intCast(tab_view.getNPages());
+    for (0..n) |i| {
+        const page = tab_view.getNthPage(@intCast(i));
+        const tab = gobject.ext.cast(Tab, page.getChild()) orelse continue;
+        const tree = tab.getSurfaceTree() orelse continue;
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            if (entry.view != focus) entry.view.setUnfocused();
+        }
+    }
+    if (focus) |surface| surface.grabFocus();
 }
 
 fn buildTree(

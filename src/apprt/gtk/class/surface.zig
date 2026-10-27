@@ -2143,6 +2143,13 @@ pub const Surface = extern struct {
         return self.private().focused;
     }
 
+    /// Mark this surface as not focused. A new surface assumes it has the
+    /// focus until it loses it, so one that is created without ever
+    /// getting the focus (e.g. a split of a restored layout) must be told.
+    pub fn setUnfocused(self: *Self) void {
+        if (self.private().focused) self.updateFocus(false);
+    }
+
     /// Returns true if the GLArea of this surface is mapped.
     pub fn getMapped(self: *Self) bool {
         return self.private().mapped;
