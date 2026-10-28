@@ -1054,6 +1054,8 @@ pub const Application = extern struct {
             unfocused_fill.b,
         });
 
+        // Only the border's size and shape come from the config. Its colors
+        // are defaults that gtk-custom-css overrides.
         if (config.@"split-border-width" > 0) {
             try writer.print(
                 \\.surface.split-border {{
@@ -1072,14 +1074,21 @@ pub const Application = extern struct {
                 config.background.g,
                 config.background.b,
             });
-            if (config.@"split-border-color") |color| try writer.print(
-                \\.surface.split-border {{ border-color: rgb({d},{d},{d}); }}
+        }
+
+        if (config.@"split-border-radius" > 0) {
+            try writer.print(
+                \\.surface.split-border {{ border-radius: {d}px; }}
                 \\
-            , .{ color.r, color.g, color.b });
-            if (config.@"split-border-focused-color") |color| try writer.print(
-                \\.surface.split-border.split-focused {{ border-color: rgb({d},{d},{d}); }}
+            , .{config.@"split-border-radius"});
+        }
+
+        if (config.@"split-gap" > 0) {
+            try writer.print(
+                \\.window .split paned.horizontal > separator {{ min-width: {[gap]d}px; }}
+                \\.window .split paned.vertical > separator {{ min-height: {[gap]d}px; }}
                 \\
-            , .{ color.r, color.g, color.b });
+            , .{ .gap = config.@"split-gap" });
         }
 
         if (config.@"split-divider-color") |color| {

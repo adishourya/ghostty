@@ -277,6 +277,9 @@ Overlay terminal_page {
 }
 
 template $GhosttySurface: Adw.Bin {
+  // Clips the terminal to the rounded corners of `split-border-radius`.
+  overflow: hidden;
+
   styles [
     "surface",
   ]

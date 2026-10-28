@@ -2468,7 +2468,8 @@ pub const Surface = extern struct {
         }
     }
 
-    /// Mark a split, and the focused one, for `split-border-width`.
+    /// Mark a split, and the focused one, for `split-border-width` and
+    /// `split-border-radius`.
     fn propSplitBorder(
         self: *Self,
         _: *gobject.ParamSpec,

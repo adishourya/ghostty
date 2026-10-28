@@ -1083,24 +1083,33 @@ palette: Palette = .{},
 @"split-divider-color": ?Color = null,
 
 /// The width of a border drawn around each split, in pixels, so that each
-/// split is framed on its own and the focused one can be told apart by
-/// `split-border-focused-color`. Borders are only drawn when a tab has more
-/// than one split. Zero, the default, draws none.
+/// split is framed on its own and the focused one can be told apart.
+/// Borders are only drawn when a tab has more than one split. Zero, the
+/// default, draws none.
+///
+/// The border colors come from CSS, so they can be set in a file loaded by
+/// `gtk-custom-css`. They default to a mix of the foreground and background
+/// colors, and the accent color for the focused split:
+///
+///     .surface.split-border { border-color: #4c566a; }
+///     .surface.split-border.split-focused { border-color: #81a1c1; }
 ///
 /// Only supported on Linux with GTK.
 @"split-border-width": u8 = 0,
 
-/// The color of split borders; see `split-border-width`. Defaults to a mix
-/// of the foreground and background colors.
+/// The corner radius of each split, in pixels. Like `split-border-width`,
+/// this only applies when a tab has more than one split. Zero, the default,
+/// gives square corners.
 ///
-/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-@"split-border-color": ?Color = null,
+/// Only supported on Linux with GTK.
+@"split-border-radius": u8 = 0,
 
-/// The color of the focused split's border; see `split-border-width`.
-/// Defaults to the accent color.
+/// The gap between splits, in pixels. The gap shows the window background,
+/// or `split-divider-color` if set. Zero, the default, leaves the usual thin
+/// divider.
 ///
-/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-@"split-border-focused-color": ?Color = null,
+/// Only supported on Linux with GTK.
+@"split-gap": u8 = 0,
 
 /// Control when Ghostty preserves a zoomed split. Under normal circumstances,
 /// any operation that changes focus or layout of the split tree in a window
