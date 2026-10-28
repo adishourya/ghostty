@@ -650,6 +650,13 @@ fn sendReplay(self: *Server, client: *Client, pane: *Pane) void {
         self.send(client, .output, chunk);
         rest = rest[chunk.len..];
     }
+
+    // The replay doesn't carry the title. Without it, a shell idle at its
+    // prompt leaves the tab titled after the spooky command Ghostty ran.
+    var title_buf: [1024]u8 = undefined;
+    if (std.fmt.bufPrint(&title_buf, "\x1b]2;{s}\x1b\\", .{pane.title()})) |osc| {
+        if (osc.len > "\x1b]2;\x1b\\".len) self.send(client, .output, osc);
+    } else |_| {}
 }
 
 /// Run again what resurrected panes were running: type each command into

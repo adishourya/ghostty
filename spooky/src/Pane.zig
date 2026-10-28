@@ -382,6 +382,16 @@ pub fn replay(self: *Pane) ![]u8 {
     return ptr[0..len];
 }
 
+/// The title the pane's program last set (OSC 0/2), or empty. Valid until
+/// the terminal is next changed.
+pub fn title(self: *Pane) []const u8 {
+    self.catchUp(null);
+    var str: c.GhosttyString = undefined;
+    if (c.ghostty_terminal_get(self.term, c.GHOSTTY_TERMINAL_DATA_TITLE, &str) != c.GHOSTTY_SUCCESS) return "";
+    if (str.ptr == null) return "";
+    return str.ptr[0..str.len];
+}
+
 pub fn freeBuf(buf: []u8) void {
     if (buf.len == 0) return;
     c.ghostty_free(null, buf.ptr, buf.len);
