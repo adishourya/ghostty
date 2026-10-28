@@ -68,6 +68,7 @@ spooky attach -p ID      # attach to one pane (steals it from another view)
 spooky rename [OLD] NEW  # rename a session (default: the current pane's)
 spooky rm NAME...        # delete sessions: end their panes and forget them
 spooky session           # print this pane's session
+spooky animal            # pick this session's animal (see below)
 spooky restart-server    # save everything and restart the daemon, e.g. to upgrade
 spooky kill-server       # stop everything and forget saved state
 ```
@@ -91,6 +92,19 @@ spooky_prompt() { [[ -n $SPOOKY_PANE ]] && SPOOKY_SESSION=$(spooky session 2>/de
 precmd_functions+=(spooky_prompt)
 setopt prompt_subst
 RPROMPT='${SPOOKY_SESSION:+[$SPOOKY_SESSION]}'
+```
+
+**Animals:** each session also shows a little animal before its name, a
+Nerd Font icon you can color with `.spooky-animal`. A new session gets a
+random one and keeps it, across restarts and in every window. To choose:
+
+```sh
+spooky animal              # inside a pane: pick with ←/→ (or h/l), Enter keeps,
+                           # Esc cancels; the tab bar previews each one live
+spooky animal owl          # set this pane's session's animal
+spooky animal work owl     # set another session's
+spooky new work --animal owl
+spooky animal --list       # every animal
 ```
 
 **Closing:** closing a split or a tab ends its panes. Closing a whole window,

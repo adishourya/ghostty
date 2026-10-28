@@ -18,6 +18,7 @@ const protocol = @import("protocol.zig");
 const layout = @import("layout.zig");
 const Server = @import("Server.zig");
 const Pane = @import("Pane.zig");
+const animals = @import("animals.zig");
 
 const log = std.log.scoped(.sessions);
 
@@ -27,6 +28,8 @@ pub const Session = struct {
     window: ?u64 = null,
     /// The last seen `layout.Saved`, as JSON.
     layout: ?[]u8 = null,
+    /// Shown beside the name in ghostty's tab bar; see animals.zig.
+    animal: animals.Index,
 
     pub fn deinit(self: Session, gpa: std.mem.Allocator) void {
         gpa.free(self.name);
@@ -45,7 +48,7 @@ pub fn ensure(server: *Server, name: []const u8) !*Session {
     if (find(server, name)) |s| return s;
     const owned = try server.gpa.dupe(u8, name);
     errdefer server.gpa.free(owned);
-    try server.sessions.append(server.gpa, .{ .name = owned });
+    try server.sessions.append(server.gpa, .{ .name = owned, .animal = animals.random() });
     server.state_dirty = true;
     return &server.sessions.items[server.sessions.items.len - 1];
 }
@@ -273,7 +276,7 @@ pub fn sendSurfaces(server: *Server) void {
         const window = s.window orelse continue;
         hasher.update(std.mem.asBytes(&window));
         hasher.update(s.name);
-        hasher.update(&.{0});
+        hasher.update(&.{ 0, s.animal });
     }
     const hash = hasher.final();
     if (server.sent_surfaces == hash) return;
@@ -290,7 +293,11 @@ pub fn sendSurfaces(server: *Server) void {
     var windows: std.ArrayList(layout.Surfaces.Entry) = .empty;
     for (server.sessions.items) |s| {
         const window = s.window orelse continue;
-        windows.append(arena, .{ .id = window, .session = s.name }) catch return;
+        windows.append(arena, .{
+            .id = window,
+            .session = s.name,
+            .animal = animals.all[s.animal].glyph,
+        }) catch return;
     }
     const json = std.json.Stringify.valueAlloc(arena, layout.Surfaces{
         .exe = server.exe(),
@@ -347,8 +354,10 @@ pub fn open(server: *Server, client: *Server.Client, kind: protocol.Prepare.Kind
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
+    const split = animals.splitName(name_);
+    const animal = animals.find(split.animal);
     var name_buf: [16]u8 = undefined;
-    const name = if (name_.len > 0) name_ else autoName(server, &name_buf);
+    const name = if (split.name.len > 0) split.name else autoName(server, &name_buf);
 
     // Null when the session's window is already open and was raised.
     const maybe: ?layout.Open = switch (kind) {
@@ -361,6 +370,7 @@ pub fn open(server: *Server, client: *Server.Client, kind: protocol.Prepare.Kind
 
         .session, .new => request: {
             if (find(server, name)) |s| {
+                if (animal) |a| setAnimal(server, s, a);
                 if (s.window) |window| {
                     var id: [8]u8 = undefined;
                     std.mem.writeInt(u64, &id, window, .little);
@@ -375,13 +385,14 @@ pub fn open(server: *Server, client: *Server.Client, kind: protocol.Prepare.Kind
                 return server.fail(client, msg);
             }
             const tabs = arena.alloc(layout.Node, 1) catch return;
-            const argv = arena.alloc([]const u8, 4) catch return;
-            argv[0] = server.exe();
-            argv[1] = "new";
-            argv[2] = "-s";
-            argv[3] = arena.dupe(u8, name) catch return;
-            tabs[0] = .{ .argv = argv };
-            break :request .{ .session = argv[3], .tabs = tabs };
+            var argv: std.ArrayList([]const u8) = .empty;
+            const owned = arena.dupe(u8, name) catch return;
+            argv.appendSlice(arena, &.{ server.exe(), "new", "-s", owned }) catch return;
+            // The new window's `spooky new` creates the session, and with it
+            // the animal; until then there is no session to set it on.
+            if (animal) |a| argv.appendSlice(arena, &.{ "--animal", animals.all[a].name }) catch return;
+            tabs[0] = .{ .argv = argv.items };
+            break :request .{ .session = owned, .tabs = tabs };
         },
 
         _ => return server.fail(client, "malformed open request"),
@@ -476,6 +487,37 @@ pub fn rename(server: *Server, client: *Server.Client, payload: []const u8) void
     client.closing = true;
 }
 
+pub fn setAnimal(server: *Server, session: *Session, animal: animals.Index) void {
+    if (session.animal == animal) return;
+    session.animal = animal;
+    server.state_dirty = true;
+}
+
+/// `spooky animal`: set a session's animal, or just report it.
+pub fn animalRequest(server: *Server, client: *Server.Client, payload: []const u8) void {
+    const req = protocol.readStruct(protocol.Rename, payload) orelse return server.fail(client, "malformed animal request");
+    const rest = payload[@sizeOf(protocol.Rename)..];
+    const sep = std.mem.indexOfScalar(u8, rest, 0) orelse return server.fail(client, "malformed animal request");
+    var name = rest[0..sep];
+    const wanted = rest[sep + 1 ..];
+
+    if (name.len == 0) {
+        const pane = server.findPane(req.pane) orelse return server.fail(client, "not inside a spooky pane");
+        name = pane.session;
+    }
+    const session = find(server, name) orelse {
+        var buf: [128]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "no session '{s}'", .{name[0..@min(name.len, 64)]}) catch "no such session";
+        return server.fail(client, msg);
+    };
+    if (wanted.len > 0) {
+        const index = animals.find(wanted) orelse return server.fail(client, "no such animal; see `spooky animal --list`");
+        setAnimal(server, session, index);
+    }
+    server.send(client, .text, animals.all[session.animal].name);
+    client.closing = true;
+}
+
 /// `spooky rm NAME`: end the session's panes and forget it, including any
 /// panes waiting to be resurrected. Its window closes as its panes exit.
 pub fn remove(server: *Server, client: *Server.Client, name: []const u8) void {
@@ -504,8 +546,10 @@ pub fn list(server: *Server, out: *std.ArrayList(u8)) !void {
         try out.appendSlice(server.gpa, "no sessions\n");
         return;
     }
+    // Each name follows its animal and a space. Widths are in characters,
+    // not bytes, so names that aren't ASCII stay aligned.
     var width: usize = "SESSION".len;
-    for (server.sessions.items) |s| width = @max(width, s.name.len);
+    for (server.sessions.items) |s| width = @max(width, 2 + displayWidth(s.name));
 
     try out.appendSlice(server.gpa, "SESSION");
     try out.appendNTimes(server.gpa, ' ', width - "SESSION".len);
@@ -525,13 +569,19 @@ pub fn list(server: *Server, out: *std.ArrayList(u8)) !void {
         }
         const tabs = tabCount(server.gpa, s);
 
-        try out.appendSlice(server.gpa, s.name);
-        try out.appendNTimes(server.gpa, ' ', width - s.name.len);
+        try out.print(server.gpa, "{s} {s}", .{ animals.all[s.animal].glyph, s.name });
+        try out.appendNTimes(server.gpa, ' ', width - 2 - displayWidth(s.name));
         const state = if (s.window != null) "open" else if (panes > 0) "detached" else "saved";
         try out.print(server.gpa, "  {s:<8}  ", .{state});
         if (tabs) |n| try out.print(server.gpa, "{d:>4}", .{n}) else try out.appendSlice(server.gpa, "   -");
         try out.print(server.gpa, "  {d:>5}  {s}\n", .{ panes, running.items });
     }
+}
+
+/// Columns `text` takes, counting each code point as one; invalid UTF-8
+/// counts as bytes.
+fn displayWidth(text: []const u8) usize {
+    return std.unicode.utf8CountCodepoints(text) catch text.len;
 }
 
 fn tabCount(gpa: std.mem.Allocator, s: Session) ?usize {

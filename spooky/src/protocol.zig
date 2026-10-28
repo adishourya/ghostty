@@ -13,7 +13,9 @@ pub const header_len = 5;
 pub const Tag = enum(u8) {
     // Client to server.
 
-    /// Create a new pane and attach to it. Payload: `New`.
+    /// Create a new pane and attach to it. Payload: `New`, the cwd, then a
+    /// session name, optionally followed by a zero byte and an animal for
+    /// the session (see `animals.splitName`).
     new = 1,
     /// Attach to an existing pane. Payload: `Attach`, then optionally a
     /// session name to attach to that session's panes instead of `pane`.
@@ -39,8 +41,9 @@ pub const Tag = enum(u8) {
     /// tab, not a whole window). Payload: little-endian u64 surface ids.
     closed = 10,
     /// Ask the controller to open a session, pane or new session in a new
-    /// window. Payload: `Prepare`, then a name. Fails with `no_controller`
-    /// if ghostty isn't connected.
+    /// window. Payload: `Prepare`, then a name, optionally followed by a
+    /// zero byte and an animal as for `new`. Fails with `no_controller` if
+    /// ghostty isn't connected.
     open = 11,
     /// Rename a session. Payload: old name (empty: the session of pane
     /// `Rename.pane`), a zero byte, then the new name.
@@ -50,6 +53,11 @@ pub const Tag = enum(u8) {
     remove = 13,
     /// The name of a pane's session, as text. Payload: u32 pane id.
     session = 14,
+    /// Set a session's animal, or with an empty animal just ask for it.
+    /// Payload: `Rename` (the pane whose session is meant when the name is
+    /// empty), a session name, a zero byte, then an animal name. Replies
+    /// with the session's animal name.
+    animal = 15,
 
     // Server to client.
 

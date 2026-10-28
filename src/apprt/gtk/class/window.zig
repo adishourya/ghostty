@@ -26,7 +26,6 @@ const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const spooky = @import("../spooky.zig");
-const global = @import("../../../global.zig");
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
@@ -298,10 +297,6 @@ pub const Window = extern struct {
 
         /// This window shows a spooky session; see `setSpookySession`.
         spooky_session: bool = false,
-
-        /// The animal shown beside this window's spooky session, picked
-        /// at random the first time the window shows a session.
-        spooky_animal: ?[:0]const u8 = null,
 
         // Template bindings
         tab_overview: *adw.TabOverview,
@@ -1113,41 +1108,22 @@ pub const Window = extern struct {
     }
 
     /// Show the name of the spooky session this window shows at the start
-    /// of its tab bar, or hide it with null. The tab bar of a session's
-    /// window stays visible with a single tab, so the name can be seen.
-    pub fn setSpookySession(self: *Self, name_: ?[:0]const u8) void {
+    /// of its tab bar, after the session's animal glyph, or hide it with a
+    /// null name. The tab bar of a session's window stays visible with a
+    /// single tab, so the name can be seen.
+    pub fn setSpookySession(self: *Self, name_: ?[:0]const u8, animal: [:0]const u8) void {
         const priv = self.private();
         const name = if (name_) |n| if (n.len > 0) n else null else null;
         const widget = priv.spooky_session_box.as(gtk.Widget);
         if (name) |n| {
             priv.spooky_session_label.setLabel(n.ptr);
-            priv.spooky_animal_label.setLabel(spookyAnimal(priv));
+            priv.spooky_animal_label.setLabel(animal.ptr);
+            priv.spooky_animal_label.as(gtk.Widget).setVisible(@intFromBool(animal.len > 0));
         }
         widget.setVisible(@intFromBool(name != null));
         if (priv.spooky_session == (name != null)) return;
         priv.spooky_session = name != null;
         self.as(gobject.Object).notifyByPspec(properties.@"tabs-autohide".impl.param_spec);
-    }
-
-    /// Monochrome animal icons from the Nerd Font Material Design set, so
-    /// CSS can color them: paw, dog, cat, rabbit, owl, panda, penguin,
-    /// turtle, duck, elephant, koala, bird, jellyfish, bee, dolphin, snail.
-    const spooky_animals = [_][:0]const u8{
-        "\u{F03E9}", "\u{F0A43}", "\u{F011B}", "\u{F0907}",
-        "\u{F03D2}", "\u{F03DA}", "\u{F0EC0}", "\u{F0CD7}",
-        "\u{F01E5}", "\u{F07C6}", "\u{F173F}", "\u{F15C6}",
-        "\u{F0F01}", "\u{F0FA1}", "\u{F18B4}", "\u{F1677}",
-    };
-
-    /// The animal beside this window's spooky session, picked at random
-    /// the first time it is needed.
-    fn spookyAnimal(priv: *Private) [*:0]const u8 {
-        return (priv.spooky_animal orelse animal: {
-            const rng: std.Random.IoSource = .{ .io = global.io() };
-            const picked = spooky_animals[rng.interface().uintLessThan(usize, spooky_animals.len)];
-            priv.spooky_animal = picked;
-            break :animal picked;
-        }).ptr;
     }
 
     fn getTabsAutohide(self: *Self) bool {

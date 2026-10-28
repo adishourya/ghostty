@@ -31,6 +31,8 @@ pub const SessionState = struct {
     name: []const u8,
     /// `layout.Saved` as JSON: the session's tabs and splits.
     layout: ?[]const u8 = null,
+    /// See animals.zig. Missing in older state: a random one is picked.
+    animal: ?[]const u8 = null,
 };
 
 pub const State = struct {

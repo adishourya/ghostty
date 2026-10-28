@@ -190,6 +190,32 @@ pub fn rename(gpa: std.mem.Allocator, pane: u32, old: []const u8, new_name: []co
     return printReply(gpa, fd, .rename, payload.items);
 }
 
+/// Set the animal of session `session`, or of pane `pane`'s session if
+/// `session` is empty. With an empty `wanted`, only asks. Returns the
+/// session's animal name, which the caller frees, or null after printing
+/// why it failed.
+pub fn animal(gpa: std.mem.Allocator, pane: u32, session: []const u8, wanted: []const u8) !?[]u8 {
+    const fd = try connectOrSpawn();
+    defer sys.close(fd);
+    var payload: std.ArrayList(u8) = .empty;
+    defer payload.deinit(gpa);
+    const req: protocol.Rename = .{ .pane = pane };
+    try payload.appendSlice(gpa, std.mem.asBytes(&req));
+    try payload.appendSlice(gpa, session);
+    try payload.append(gpa, 0);
+    try payload.appendSlice(gpa, wanted);
+
+    var text: std.ArrayList(u8) = .empty;
+    errdefer text.deinit(gpa);
+    if (try request(gpa, fd, .animal, payload.items, &text)) |err| {
+        defer gpa.free(err);
+        std.debug.print("spooky: {s}\n", .{err});
+        text.deinit(gpa);
+        return null;
+    }
+    return try text.toOwnedSlice(gpa);
+}
+
 /// Stop the daemon the way a shutdown would: it saves every pane and
 /// session first, and the next spooky starts a new daemon that brings them
 /// back. Works with older daemons too, so it can be used to upgrade.
@@ -230,6 +256,18 @@ fn printReply(gpa: std.mem.Allocator, fd: sys.Fd, tag: protocol.Tag, payload: []
 /// Send a request and print any text reply. Returns the error message if
 /// the request failed; the caller frees it.
 fn requestPayload(gpa: std.mem.Allocator, fd: sys.Fd, tag: protocol.Tag, payload: []const u8) !?[]u8 {
+    return request(gpa, fd, tag, payload, null);
+}
+
+/// Like `requestPayload`, but with `text` set, the text reply is collected
+/// there instead of printed.
+fn request(
+    gpa: std.mem.Allocator,
+    fd: sys.Fd,
+    tag: protocol.Tag,
+    payload: []const u8,
+    text: ?*std.ArrayList(u8),
+) !?[]u8 {
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(gpa);
     try protocol.append(gpa, &out, tag, payload);
@@ -248,7 +286,10 @@ fn requestPayload(gpa: std.mem.Allocator, fd: sys.Fd, tag: protocol.Tag, payload
     var off: usize = 0;
     while (try protocol.parse(in.items[off..])) |p| : (off += p.len) {
         switch (p.frame.tag) {
-            .text => try sys.writeAll(1, p.frame.payload),
+            .text => if (text) |t|
+                try t.appendSlice(gpa, p.frame.payload)
+            else
+                try sys.writeAll(1, p.frame.payload),
             .err => return try gpa.dupe(u8, p.frame.payload),
             else => {},
         }

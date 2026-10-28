@@ -14,6 +14,7 @@ const c = @import("c");
 const sys = @import("sys.zig");
 const protocol = @import("protocol.zig");
 const persist = @import("persist.zig");
+const animals = @import("animals.zig");
 const Pane = @import("Pane.zig");
 const sessionpkg = @import("sessions.zig");
 
@@ -476,7 +477,8 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
             const rest = frame.payload[@sizeOf(protocol.New)..];
             if (req.cwd_len > rest.len) return self.fail(client, "malformed new request");
             const cwd = rest[0..req.cwd_len];
-            var session = rest[req.cwd_len..];
+            const named = animals.splitName(rest[req.cwd_len..]);
+            var session = named.name;
             client.surface = req.surface;
 
             // Only set up by `spooky new/attach` inside a pane when ghostty
@@ -510,7 +512,9 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
                 sessionpkg.forSurface(self, client.surface, &name_buf);
             if (session.len > 0) {
                 self.setActive(session);
-                _ = sessionpkg.ensure(self, session) catch {};
+                if (sessionpkg.ensure(self, session)) |s| {
+                    if (animals.find(named.animal)) |a| sessionpkg.setAnimal(self, s, a);
+                } else |_| {}
             }
 
             const pane = Pane.create(self.gpa, .{
@@ -548,7 +552,9 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
         .prepare => {
             const req = protocol.readStruct(protocol.Prepare, frame.payload) orelse
                 return self.fail(client, "malformed prepare request");
-            const session = frame.payload[@sizeOf(protocol.Prepare)..];
+            // Without ghostty as the controller there's no tab bar to show
+            // an animal in, so one given with the name is dropped.
+            const session = animals.splitName(frame.payload[@sizeOf(protocol.Prepare)..]).name;
             switch (req.kind) {
                 .new => {},
                 .pane => if (self.findPane(req.pane) == null) return self.fail(client, "no such pane"),
@@ -582,6 +588,7 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
         .layout => if (client == self.controller) sessionpkg.handleReport(self, frame.payload),
         .closed => if (client == self.controller) sessionpkg.handleClosed(self, frame.payload),
         .rename => sessionpkg.rename(self, client, frame.payload),
+        .animal => sessionpkg.animalRequest(self, client, frame.payload),
         .remove => sessionpkg.remove(self, client, frame.payload),
         .session => {
             const id = protocol.readStruct(u32, frame.payload) orelse
@@ -881,7 +888,11 @@ fn save(self: *Server, all: bool) void {
     var saved_sessions: std.ArrayList(persist.SessionState) = .empty;
     defer saved_sessions.deinit(self.gpa);
     for (self.sessions.items) |s| {
-        saved_sessions.append(self.gpa, .{ .name = s.name, .layout = s.layout }) catch return;
+        saved_sessions.append(self.gpa, .{
+            .name = s.name,
+            .layout = s.layout,
+            .animal = animals.all[s.animal].name,
+        }) catch return;
     }
 
     persist.writeState(self.gpa, &self.paths, .{
@@ -927,6 +938,9 @@ fn restore(self: *Server) void {
     for (parsed.value.sessions) |ss| {
         const session = sessionpkg.ensure(self, ss.name) catch continue;
         if (ss.layout) |l| session.layout = self.gpa.dupe(u8, l) catch null;
+        if (ss.animal) |name| if (animals.find(name)) |a| {
+            session.animal = a;
+        };
     }
 
     for (parsed.value.panes) |ps| {

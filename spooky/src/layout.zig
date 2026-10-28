@@ -61,6 +61,8 @@ pub const Surfaces = struct {
     pub const Entry = struct {
         id: u64,
         session: []const u8,
+        /// The session's animal glyph; only set for windows.
+        animal: ?[]const u8 = null,
     };
 };
 

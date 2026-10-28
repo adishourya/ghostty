@@ -2,6 +2,8 @@ const std = @import("std");
 const c = @import("c");
 const Server = @import("Server.zig");
 const client = @import("client.zig");
+const animals = @import("animals.zig");
+const picker = @import("picker.zig");
 
 pub const std_options: std.Options = .{
     // SPOOKY_DEBUG=1 in the daemon's environment logs protocol details.
@@ -24,11 +26,15 @@ const usage =
     \\
     \\  (none)               start a new pane (use as ghostty's `command`)
     \\  new [NAME]           open a new session in a new window
+    \\    --animal ANIMAL    show this animal beside it (see `animal --list`)
     \\  attach NAME          reopen a session's window, tabs and splits
     \\  attach -p ID         attach to one pane
     \\  rename [OLD] NEW     rename a session (default: this pane's)
     \\  rm NAME...           delete sessions: end their panes and forget them
     \\  session              print this pane's session (also in $SPOOKY_SESSION)
+    \\  animal [[NAME] ANIMAL]  pick (or set) the animal shown beside a
+    \\                       session (default: this pane's)
+    \\  animal --list        list the animals
     \\  ls [-p]              list sessions, or with -p, panes
     \\  restart-server       save everything and restart the daemon (to upgrade)
     \\  kill-server          stop the daemon and every pane, forgetting them
@@ -62,7 +68,14 @@ pub fn main(init: std.process.Init) !void {
         return Server.run(gpa);
     } else if (std.mem.eql(u8, cmd, "new")) {
         // `new NAME` and the older `new -s NAME`.
-        const session = flag(rest, "-s") orelse positional(rest) orelse "";
+        const name = flag(rest, "-s") orelse positional(rest) orelse "";
+        // The animal travels after the name, separated by a zero byte.
+        var session_buf: [512]u8 = undefined;
+        const session = if (flag(rest, "--animal")) |animal| session: {
+            if (animals.find(animal) == null) std.process.exit(unknownAnimal(animal));
+            break :session std.fmt.bufPrint(&session_buf, "{s}\x00{s}", .{ name, animal }) catch
+                return fatal("session name too long");
+        } else name;
         if (inside != null) std.process.exit(try client.openWindow(gpa, .new, 0, session));
         std.process.exit(try client.new(gpa, session, .{}));
     } else if (std.mem.eql(u8, cmd, "attach")) {
@@ -89,6 +102,8 @@ pub fn main(init: std.process.Init) !void {
             2 => std.process.exit(try client.rename(gpa, 0, rest[0], rest[1])),
             else => return fatal("usage: spooky rename [OLD] NEW"),
         }
+    } else if (std.mem.eql(u8, cmd, "animal")) {
+        std.process.exit(try animalCommand(gpa, inside, rest));
     } else if (std.mem.eql(u8, cmd, "rm")) {
         if (rest.len == 0) return fatal("usage: spooky rm NAME... (see `spooky ls`)");
         var status: u8 = 0;
@@ -118,21 +133,72 @@ fn flag(args: []const [:0]const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// The first argument that isn't a flag.
+/// The first argument that isn't a flag or a flag's value.
 fn positional(args: []const [:0]const u8) ?[]const u8 {
-    for (args) |arg| {
-        if (arg.len > 0 and arg[0] != '-') return arg;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (arg.len > 0 and arg[0] == '-') {
+            // Every flag these commands take has a value.
+            i += 1;
+            continue;
+        }
+        return arg;
     }
     return null;
 }
 
+/// `spooky animal`: with no arguments, the picker; `ANIMAL` sets this
+/// pane's session's animal and `NAME ANIMAL` another session's.
+fn animalCommand(gpa: std.mem.Allocator, inside: ?u32, args: []const [:0]const u8) !u8 {
+    if (flag(args, "--list") != null or flag(args, "-l") != null) {
+        for (animals.all) |a| std.debug.print("{s} {s}\n", .{ a.glyph, a.name });
+        return 0;
+    }
+    const session: []const u8, const wanted: []const u8 = switch (args.len) {
+        0 => {
+            const id = inside orelse return fatalCode("not inside a spooky pane; use `spooky animal NAME ANIMAL`");
+            if (c.isatty(0) == 0 or c.isatty(1) == 0) {
+                for (animals.all) |a| std.debug.print("{s} {s}\n", .{ a.glyph, a.name });
+                return 0;
+            }
+            return picker.run(gpa, id);
+        },
+        1 => .{ "", args[0] },
+        2 => .{ args[0], args[1] },
+        else => return fatalCode("usage: spooky animal [[NAME] ANIMAL] | --list"),
+    };
+    if (animals.find(wanted) == null) return unknownAnimal(wanted);
+    const pane = if (session.len == 0)
+        inside orelse return fatalCode("not inside a spooky pane; use `spooky animal NAME ANIMAL`")
+    else
+        0;
+    const name = try client.animal(gpa, pane, session, wanted) orelse return 1;
+    defer gpa.free(name);
+    const index = animals.find(name) orelse return 0;
+    std.debug.print("{s} {s}\n", .{ animals.all[index].glyph, name });
+    return 0;
+}
+
+fn unknownAnimal(name: []const u8) u8 {
+    std.debug.print("spooky: no animal '{s}'. Pick one of:\n", .{name});
+    for (animals.all) |a| std.debug.print("  {s} {s}\n", .{ a.glyph, a.name });
+    return 1;
+}
+
 fn fatal(msg: []const u8) void {
+    std.process.exit(fatalCode(msg));
+}
+
+/// Print `msg` as an error and return the exit code for it.
+fn fatalCode(msg: []const u8) u8 {
     std.debug.print("spooky: {s}\n", .{msg});
-    std.process.exit(1);
+    return 1;
 }
 
 test {
     _ = @import("protocol.zig");
     _ = @import("persist.zig");
     _ = @import("layout.zig");
+    _ = @import("animals.zig");
 }

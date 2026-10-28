@@ -87,10 +87,12 @@ const Surfaces = struct {
     const Entry = struct {
         id: u64,
         session: [:0]const u8,
+        /// The session's animal glyph; only sent for windows.
+        animal: [:0]const u8 = "",
     };
 
-    fn find(entries: []const Entry, id: u64) ?[:0]const u8 {
-        for (entries) |e| if (e.id == id) return e.session;
+    fn find(entries: []const Entry, id: u64) ?Entry {
+        for (entries) |e| if (e.id == id) return e;
         return null;
     }
 };
@@ -134,7 +136,7 @@ pub fn inherit(parent: ?*CoreSurface, overrides: Overrides) Overrides {
     if (overrides.command != null) return overrides;
     const core = parent orelse return overrides;
     const known = state.surfaces orelse return overrides;
-    const session = Surfaces.find(known.value.surfaces, core.id) orelse return overrides;
+    const session = (Surfaces.find(known.value.surfaces, core.id) orelse return overrides).session;
     const argv = struct {
         var buf: [3][:0]const u8 = undefined;
     };
@@ -283,10 +285,17 @@ fn setSurfaces(payload: []const u8) !void {
 /// Show each window's session, if it has one, in its tab bar.
 fn labelWindows() void {
     var it = windows();
-    while (it.next()) |window| window.setSpookySession(session: {
-        const known = state.surfaces orelse break :session null;
-        break :session Surfaces.find(known.value.windows, @intFromPtr(window));
-    });
+    while (it.next()) |window| {
+        const known = state.surfaces orelse {
+            window.setSpookySession(null, "");
+            continue;
+        };
+        const entry = Surfaces.find(known.value.windows, @intFromPtr(window)) orelse {
+            window.setSpookySession(null, "");
+            continue;
+        };
+        window.setSpookySession(entry.session, entry.animal);
+    }
 }
 
 // Layout ------------------------------------------------------------------
