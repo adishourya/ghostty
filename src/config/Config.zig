@@ -1569,6 +1569,24 @@ fullscreen: Fullscreen = .false,
 /// to get the new title.
 title: ?[:0]const u8 = null,
 
+/// Where the title of each terminal, and with it the title of its tab and
+/// window, comes from. A tab shows the title of its focused split.
+///
+///   * `terminal` - The title programs set with escape sequences, such as a
+///     shell showing the running command or Neovim showing the open file.
+///     This is the default.
+///
+///   * `pwd` - Always the terminal's working directory, as reported by the
+///     shell with OSC 7, with the home directory shortened to `~`. Titles
+///     set by programs are ignored. Ghostty's shell integration reports the
+///     working directory; other shells need to send OSC 7 themselves.
+///
+/// `title` and titles set with `prompt_surface_title` or `prompt_tab_title`
+/// still take precedence.
+///
+/// Only supported on Linux with GTK.
+@"title-source": TitleSource = .terminal,
+
 /// The setting that will change the application class value.
 ///
 /// This controls the class field of the `WM_CLASS` X11 property (when running
@@ -9556,6 +9574,12 @@ pub const WindowNewTabPosition = enum {
 pub const MacOSDockDropBehavior = enum {
     @"new-tab",
     @"new-window",
+};
+
+/// See title-source
+pub const TitleSource = enum {
+    terminal,
+    pwd,
 };
 
 /// See window-show-tab-bar

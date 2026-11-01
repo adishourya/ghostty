@@ -2110,8 +2110,14 @@ pub const Surface = extern struct {
 
     /// Set the title for this surface, copies the value. This should always
     /// be the title as set by the terminal program, not any manually set
-    /// title. For manually set titles see `setTitleOverride`.
+    /// title. For manually set titles see `setTitleOverride`. Ignored with
+    /// `title-source = pwd`, where `setPwd` sets the title.
     pub fn setTitle(self: *Self, title: ?[:0]const u8) void {
+        if (self.titleFromPwd()) return;
+        self.storeTitle(title);
+    }
+
+    fn storeTitle(self: *Self, title: ?[:0]const u8) void {
         const priv = self.private();
         if (priv.title) |v| glib.free(@ptrCast(@constCast(v)));
         priv.title = null;
@@ -2141,6 +2147,28 @@ pub const Surface = extern struct {
         priv.pwd = null;
         if (pwd) |v| priv.pwd = glib.ext.dupeZ(u8, v);
         self.as(gobject.Object).notifyByPspec(properties.pwd.impl.param_spec);
+        if (self.titleFromPwd()) self.titleFromPwdUpdate();
+    }
+
+    fn titleFromPwd(self: *Self) bool {
+        const config = self.private().config orelse return false;
+        return config.get().@"title-source" == .pwd;
+    }
+
+    /// Title this surface with its pwd, with the home directory as `~`.
+    fn titleFromPwdUpdate(self: *Self) void {
+        const pwd = self.private().pwd orelse return self.storeTitle(null);
+        if (pwd.len == 0) return self.storeTitle(null);
+        const home = global.environ().getPosix("HOME") orelse "";
+        const rest = if (home.len > 1 and std.mem.startsWith(u8, pwd, home) and
+            (pwd.len == home.len or pwd[home.len] == '/'))
+            pwd[home.len..]
+        else
+            return self.storeTitle(pwd);
+
+        var buf: [std.Io.Dir.max_path_bytes + 1]u8 = undefined;
+        const title = std.fmt.bufPrintSentinel(&buf, "~{s}", .{rest}, 0) catch return self.storeTitle(pwd);
+        self.storeTitle(title);
     }
 
     /// Returns the focus state of this surface.
@@ -2428,6 +2456,9 @@ pub const Surface = extern struct {
 
         // window-padding-x, window-padding-y
         self.syncSplitMinSize();
+
+        // title-source
+        if (config.@"title-source" == .pwd) self.titleFromPwdUpdate();
 
         // resize-overlay-duration
         {
