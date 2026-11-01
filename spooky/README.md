@@ -83,15 +83,20 @@ that is already open brings its window to the front.
 **Which session:** a session's window shows its name at the start of the
 tab bar, which then stays visible even with a single tab (style it with the
 `.spooky-session` class in `gtk-custom-css`). Shells in a pane get
-`SPOOKY_SESSION`. A later `rename` can't change a running shell's
-environment, so to keep a prompt current, refresh it before each prompt:
+`SPOOKY_SESSION` and `SPOOKY_ANIMAL` (the animal's glyph). A later `rename`
+or `animal` can't change a running shell's environment, so to keep a prompt
+current, refresh them before each prompt:
 
 ```zsh
 # ~/.zshrc
-spooky_prompt() { [[ -n $SPOOKY_PANE ]] && SPOOKY_SESSION=$(spooky session 2>/dev/null) }
+spooky_prompt() {
+  [[ -n $SPOOKY_PANE ]] || return
+  SPOOKY_SESSION=$(spooky session 2>/dev/null)
+  SPOOKY_ANIMAL=$(spooky animal --glyph 2>/dev/null)
+}
 precmd_functions+=(spooky_prompt)
 setopt prompt_subst
-RPROMPT='${SPOOKY_SESSION:+[$SPOOKY_SESSION]}'
+RPROMPT='${SPOOKY_SESSION:+[$SPOOKY_ANIMAL $SPOOKY_SESSION]}'
 ```
 
 **Animals:** each session also shows a little animal before its name, a
@@ -105,6 +110,7 @@ spooky animal owl          # set this pane's session's animal
 spooky animal work owl     # set another session's
 spooky new work --animal owl
 spooky animal --list       # every animal
+spooky animal --glyph      # this session's animal now, e.g. for a prompt
 ```
 
 **Closing:** closing a split or a tab ends its panes. Closing a whole window,

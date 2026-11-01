@@ -77,6 +77,8 @@ const scrollback_bytes: usize = 16 * 1024 * 1024;
 pub const Options = struct {
     id: u32,
     session: []const u8,
+    /// The session's animal glyph, for SPOOKY_ANIMAL.
+    animal: []const u8 = "",
     size: protocol.Size,
     cwd: ?[]const u8 = null,
     /// A snapshot to restore the screen and scrollback from.
@@ -239,6 +241,13 @@ fn execChild(master: c_int, slave: c_int, opts: Options) noreturn {
         session_buf[opts.session.len] = 0;
         _ = c.setenv("SPOOKY_SESSION", @ptrCast(&session_buf), 1);
     } else _ = c.unsetenv("SPOOKY_SESSION");
+    // Likewise stale after `spooky animal`; `spooky animal --glyph` is current.
+    var animal_buf: [16]u8 = undefined;
+    if (opts.animal.len > 0 and opts.animal.len < animal_buf.len) {
+        @memcpy(animal_buf[0..opts.animal.len], opts.animal);
+        animal_buf[opts.animal.len] = 0;
+        _ = c.setenv("SPOOKY_ANIMAL", @ptrCast(&animal_buf), 1);
+    } else _ = c.unsetenv("SPOOKY_ANIMAL");
 
     const shell: [*:0]const u8 = c.getenv("SHELL") orelse "/bin/sh";
     const argv = [_:null]?[*:0]const u8{ shell, null };

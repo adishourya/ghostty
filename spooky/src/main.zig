@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @import("c");
 const Server = @import("Server.zig");
 const client = @import("client.zig");
+const sys = @import("sys.zig");
 const animals = @import("animals.zig");
 const picker = @import("picker.zig");
 
@@ -35,6 +36,8 @@ const usage =
     \\  animal [[NAME] ANIMAL]  pick (or set) the animal shown beside a
     \\                       session (default: this pane's)
     \\  animal --list        list the animals
+    \\  animal --glyph       print this pane's session's animal (also in
+    \\                       $SPOOKY_ANIMAL)
     \\  ls [-p]              list sessions, or with -p, panes
     \\  restart-server       save everything and restart the daemon (to upgrade)
     \\  kill-server          stop the daemon and every pane, forgetting them
@@ -152,14 +155,24 @@ fn positional(args: []const [:0]const u8) ?[]const u8 {
 /// pane's session's animal and `NAME ANIMAL` another session's.
 fn animalCommand(gpa: std.mem.Allocator, inside: ?u32, args: []const [:0]const u8) !u8 {
     if (flag(args, "--list") != null or flag(args, "-l") != null) {
-        for (animals.all) |a| std.debug.print("{s} {s}\n", .{ a.glyph, a.name });
+        try printList();
+        return 0;
+    }
+    if (flag(args, "--glyph") != null) {
+        // For prompts: SPOOKY_ANIMAL is fixed when the shell starts.
+        const id = inside orelse return 1;
+        const name = try client.animal(gpa, id, "", "") orelse return 1;
+        defer gpa.free(name);
+        const index = animals.find(name) orelse return 1;
+        try sys.writeAll(1, animals.all[index].glyph);
+        try sys.writeAll(1, "\n");
         return 0;
     }
     const session: []const u8, const wanted: []const u8 = switch (args.len) {
         0 => {
             const id = inside orelse return fatalCode("not inside a spooky pane; use `spooky animal NAME ANIMAL`");
             if (c.isatty(0) == 0 or c.isatty(1) == 0) {
-                for (animals.all) |a| std.debug.print("{s} {s}\n", .{ a.glyph, a.name });
+                try printList();
                 return 0;
             }
             return picker.run(gpa, id);
@@ -178,6 +191,14 @@ fn animalCommand(gpa: std.mem.Allocator, inside: ?u32, args: []const [:0]const u
     const index = animals.find(name) orelse return 0;
     std.debug.print("{s} {s}\n", .{ animals.all[index].glyph, name });
     return 0;
+}
+
+/// Every animal, one per line, on stdout so it can be piped.
+fn printList() !void {
+    var buf: [1024]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    for (animals.all) |a| try w.print("{s} {s}\n", .{ a.glyph, a.name });
+    try sys.writeAll(1, w.buffered());
 }
 
 fn unknownAnimal(name: []const u8) u8 {

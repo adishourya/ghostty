@@ -520,6 +520,7 @@ fn handleFrame(self: *Server, client: *Client, frame: protocol.Frame) void {
             const pane = Pane.create(self.gpa, .{
                 .id = self.next_pane_id,
                 .session = session,
+                .animal = self.animalGlyph(session),
                 .size = req.size,
                 .cwd = if (cwd.len > 0) cwd else null,
             }) catch |err| {
@@ -685,6 +686,12 @@ fn resumeCommands(self: *Server) void {
         pane.resume_cmd = null;
         self.gpa.free(cmd);
     }
+}
+
+/// The animal glyph of session `name`, or empty if there's no such session.
+fn animalGlyph(self: *Server, name: []const u8) []const u8 {
+    const session = sessionpkg.find(self, name) orelse return "";
+    return animals.all[session.animal].glyph;
 }
 
 pub fn findPane(self: *Server, id: u32) ?*Pane {
@@ -963,6 +970,7 @@ fn restore(self: *Server) void {
         const pane = Pane.create(self.gpa, .{
             .id = ps.id,
             .session = ps.session,
+            .animal = self.animalGlyph(ps.session),
             .size = .{ .cols = @max(ps.cols, 1), .rows = @max(ps.rows, 1) },
             .cwd = ps.cwd,
             .snapshot = snap,
