@@ -200,9 +200,10 @@ fn initTerminal(opts: Options) !c.GhosttyTerminal {
 
 /// Undo what full screen programs commonly leave enabled: alt screen,
 /// mouse reporting, focus events, bracketed paste, kitty keyboard flags,
-/// hidden cursor and SGR state.
+/// xterm's modifyOtherKeys, hidden cursor and SGR state. Left on, the last
+/// two make keys like ctrl+l arrive as escape sequences a shell can't read.
 pub const restore_modes = "\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l" ++
-    "\x1b[?1004l\x1b[?2004l\x1b[=0;1u\x1b[?25h\x1b[0m";
+    "\x1b[?1004l\x1b[?2004l\x1b[=0;1u\x1b[>4m\x1b[?25h\x1b[0m";
 
 fn execChild(master: c_int, slave: c_int, opts: Options) noreturn {
     sys.close(master);
